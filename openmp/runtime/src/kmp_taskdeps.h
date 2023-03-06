@@ -92,6 +92,31 @@ static inline void __kmp_dephash_free(kmp_info_t *thread, kmp_dephash_t *h) {
 extern void __kmpc_give_task(kmp_task_t *ptask, kmp_int32 start);
 
 static inline void __kmp_release_deps(kmp_int32 gtid, kmp_taskdata_t *task) {
+
+  if (task->is_taskgraph && !(TDG_RECORD(task->tdg->tdgStatus))) {
+    // TODO: Not needed when taskifying
+    // printf("[OpenMP] ---- Task %d ends, checking successors ----\n",
+    // this_task->part_id);
+    kmp_node_info *TaskInfo = &(task->tdg->RecordMap[task->td_task_id]);
+
+    for (int i = 0; i < TaskInfo->nsuccessors; i++) {
+      kmp_int32 successorNumber = TaskInfo->successors[i];
+      kmp_node_info *successor = &(task->tdg->RecordMap[successorNumber]);
+      // printf("  [OpenMP] Found one successor %d , deps : %d \n",
+      // successorNumber, successor->npredecessors_counter);
+
+      kmp_int32 npredecessors = KMP_ATOMIC_DEC(&successor->npredecessors_counter) - 1;
+      if (successor->task != nullptr && npredecessors==0) {
+        // printf("  [OpenMP] Successor ready, executing \n");
+        __kmp_omp_task(gtid, successor->task, false);
+      } else {
+          // printf("  [OpenMP] Task not ready , npredecessors %d \n",
+          // successor->npredecessors_counter);
+      }
+    }
+    return;
+  }
+
   kmp_info_t *thread = __kmp_threads[gtid];
   kmp_depnode_t *node = task->td_depnode;
 

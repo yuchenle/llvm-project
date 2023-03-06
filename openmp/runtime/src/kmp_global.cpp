@@ -564,4 +564,13 @@ int __kmp_nesting_mode = 0;
 int __kmp_nesting_mode_nlevels = 1;
 int *__kmp_nesting_nth_level;
 
+// global variables used by taskgraph
+kmp_tdg_info GlobalTdgs[NUM_TDG_LIMIT];
+bool tdg_recording = false;
+kmp_int32 curr_tdg_idx;
+kmp_int32 num_tdg = 0;
+kmp_int32 SuccessorsSize = 10; //Initial succesor size list for recording
+kmp_int32 SuccessorsIncrement = 5; //Allocation increment when recording
+std::atomic<kmp_int32> tdg_task_id = 0;
+kmp_int32 MaxNesting = 4; //Nesting when erasing edges
 // end of file //
