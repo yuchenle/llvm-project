@@ -672,6 +672,7 @@ kmp_int32 __kmpc_omp_task_with_deps(ident_t *loc_ref, kmp_int32 gtid,
         // new (pCounters) std::atomic<kmp_int32>(0);
       }
     }
+    new_taskdata->tdg->taskIdent[new_taskdata->td_task_id].td_ident = new_taskdata->td_ident->psource;
     new_taskdata->tdg->RecordMap[new_taskdata->td_task_id].static_id = new_taskdata->td_task_id;
     new_taskdata->tdg->RecordMap[new_taskdata->td_task_id].task = new_task;
     new_taskdata->tdg->RecordMap[new_taskdata->td_task_id].parent_task = new_taskdata->td_parent;
