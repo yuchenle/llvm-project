@@ -26,6 +26,15 @@
 extern "C" void __tgt_target_nowait_query(void **) KMP_WEAK_ATTRIBUTE_INTERNAL;
 #endif
 
+// Colors for the graphviz output, to print tdg.dot
+// TODO?: figure out a way to put this array in another file
+const char *ColorNames[] = {
+    "aquamarine3", "crimson",         "chartreuse",  "blue2",
+    "darkorchid3", "darkgoldenrod1",  "deeppink4",   "gray19",
+    "indigo",      "indianred",       "forestgreen", "navy",
+    "orangered2",  "slateblue3",      "yellowgreen", "salmon",
+    "purple",      "mediumturquoise", "slategray3"};
+
 /* forward declaration */
 static void __kmp_enable_tasking(kmp_task_team_t *task_team,
                                  kmp_info_t *this_thr);
@@ -909,8 +918,8 @@ static void __kmp_free_task(kmp_int32 gtid, kmp_taskdata_t *taskdata,
     KMP_ATOMIC_ST_RLX(&taskdata->td_allocated_child_tasks, 1);
   }
     // This is not used for upstream tdg yet
-    //If we are inside taskgraph and not recording, we must decrement the remaining tasks for the tdg. While recording this is not necessary because recording has an explicit taskwait
-    if(!(TDG_RECORD(taskdata->tdg->tdgStatus))){
+    //If we are inside taskgraph and not recording, we must decrement the remaining tasks for the tdg. While recording this is not necessary because recording has an explicit end_taskgroup
+    if(!(TDG_RECORD(taskdata->tdg->tdgStatus)) && taskdata->is_taskgraph){
       KMP_ATOMIC_DEC(&taskdata->tdg->remainingTasks);
     }
 
@@ -2010,8 +2019,7 @@ kmp_int32 __kmp_omp_task(kmp_int32 gtid, kmp_task_t *new_task,
     }
     // record a task
     if (new_taskdata->tdg->RecordMap[new_taskdata->td_task_id].task == nullptr) {
-      // new_taskdata->tdg->taskIdent[new_taskdata->td_task_id].td_ident =
-      //     new_taskdata->td_ident->psource;
+      new_taskdata->tdg->taskIdent[new_taskdata->td_task_id].td_ident = new_taskdata->td_ident->psource;
       new_taskdata->tdg->RecordMap[new_taskdata->td_task_id].static_id = new_taskdata->td_task_id;
       new_taskdata->tdg->RecordMap[new_taskdata->td_task_id].task = new_task;
       new_taskdata->tdg->RecordMap[new_taskdata->td_task_id].parent_task = new_taskdata->td_parent;
@@ -2260,11 +2268,6 @@ static inline void __kmp_start_record(kmp_int32 gtid, kmp_taskgraph_flags_t *fla
   GlobalTdgs[curr_tdg_idx].mapSize = INIT_MAPSIZE;
   GlobalTdgs[curr_tdg_idx].numRoots = -1;
   GlobalTdgs[curr_tdg_idx].rootTasks = nullptr;
-  // GlobalTdgs[curr_tdg_idx].RecordMap = nullptr;
-  // GlobalTdgs[curr_tdg_idx].taskIdent = ThisTaskIdentMap;
-  // GlobalTdgs[curr_tdg_idx].colorMap = ThisColorMap;
-  // GlobalTdgs[curr_tdg_idx].colorIndex = 0;
-  // GlobalTdgs[curr_tdg_idx].colorMapSize = 20;
   GlobalTdgs[curr_tdg_idx].tdgStatus = TDG_RECORDING;
   GlobalTdgs[curr_tdg_idx].numTasks = 0;
   GlobalTdgs[curr_tdg_idx].rec_num_taskred = 0;
@@ -2272,6 +2275,9 @@ static inline void __kmp_start_record(kmp_int32 gtid, kmp_taskgraph_flags_t *fla
 
   // Initializing the list of nodes in this TDG
   kmp_node_info *ThisRecordMap = (kmp_node_info *)__kmp_allocate(INIT_MAPSIZE * sizeof(kmp_node_info));
+  kmp_ident_task *ThisTaskIdentMap = (kmp_ident_task *)__kmp_allocate(INIT_MAPSIZE * sizeof(kmp_ident_task));
+  kmp_int32 ThisColorMapSize = 20;
+  kmp_ident_color *ThisColorMap = (kmp_ident_color *)malloc(ThisColorMapSize * sizeof(kmp_ident_color));
   for (kmp_int32 i = 0; i < INIT_MAPSIZE; i++) {
     // ThisTaskIdentMap[i] = {nullptr};
     kmp_int32 *successorsList =
@@ -2289,6 +2295,10 @@ static inline void __kmp_start_record(kmp_int32 gtid, kmp_taskgraph_flags_t *fla
   }
 
   GlobalTdgs[curr_tdg_idx].RecordMap = ThisRecordMap;
+  GlobalTdgs[curr_tdg_idx].taskIdent = ThisTaskIdentMap;
+  GlobalTdgs[curr_tdg_idx].colorMap = ThisColorMap;
+  GlobalTdgs[curr_tdg_idx].colorIndex = 0;
+  GlobalTdgs[curr_tdg_idx].colorMapSize = 20;
 
   tdg_recording = true;
 }
@@ -2329,6 +2339,100 @@ kmp_int32 __kmpc_start_record_task(ident_t *loc_ref, kmp_int32 gtid, kmp_int32 i
   return res;
 }
 
+void print_tdg_to_dot(kmp_tdg_info *thisTdg) {
+  char FileName[20];
+  sprintf(FileName, "tdg_%d.dot", thisTdg->tdgId);
+  FILE *f = fopen(FileName, "w");
+
+  if (f == NULL) {
+    printf("Error opening file!\n");
+    exit(1);
+  }
+
+  fprintf(f, "digraph TDG {\n");
+  fprintf(f, "   compound=true\n");
+  fprintf(f, "   subgraph cluster_0 {\n");
+  fprintf(f, "      label=TDG_%d\n", thisTdg->tdgId);
+
+  for (kmp_int32 i = 0; i < thisTdg->numTasks; i++) {
+
+    const char *color = nullptr;
+    const char *ident = thisTdg->taskIdent[i].td_ident;
+    for (int j = 0; j < thisTdg->colorMapSize; j++) {
+      if (thisTdg->colorMap[j].td_ident == nullptr) {
+        thisTdg->colorMap[j].td_ident = ident;
+        thisTdg->colorMap[j].color = ColorNames[thisTdg->colorIndex];
+        thisTdg->colorIndex++;
+	color = thisTdg->colorMap[j].color;
+	if(thisTdg->colorIndex>= (int) (sizeof(ColorNames)/sizeof(ColorNames[0])))
+	  thisTdg->colorIndex = 0;
+        break;
+      } else if (thisTdg->colorMap[j].td_ident == ident) {
+        color = thisTdg->colorMap[j].color;
+        break;
+      }
+     }
+
+     if (color == nullptr) {
+	 int OldSize = thisTdg->colorMapSize;
+	 thisTdg->colorMapSize = thisTdg->colorMapSize * 2;
+	 kmp_ident_color *oldColorMap = thisTdg->colorMap;
+	 kmp_ident_color *newColorMap = (kmp_ident_color *)malloc(thisTdg->colorMapSize * sizeof(kmp_ident_color));
+	 KMP_MEMCPY(newColorMap, thisTdg->colorMap, OldSize *  sizeof(kmp_ident_color));
+
+	 thisTdg->colorMap = newColorMap;
+	 free(oldColorMap);
+
+	 thisTdg->colorMap[OldSize].td_ident = ident;
+         thisTdg->colorMap[OldSize].color = ColorNames[thisTdg->colorIndex];
+         thisTdg->colorIndex++;
+         color = thisTdg->colorMap[OldSize].color;
+         if(thisTdg->colorIndex>= (int) (sizeof(ColorNames)/sizeof(ColorNames[0])))
+		thisTdg->colorIndex = 0;
+	 for (int j = OldSize+1; j < thisTdg->colorMapSize; j++) {
+		thisTdg->colorMap[j]= {nullptr, nullptr};
+	 }
+    }
+    if (color == nullptr) {
+      printf("Unexpected error, color not found \n");
+    } else {
+      fprintf(f, "      %d[color=%s,style=bold]\n", thisTdg->RecordMap[i].static_id,
+              color);
+    }
+  }
+  fprintf(f, "   }\n");
+  for (kmp_int32 i = 0; i < thisTdg->numTasks; i++) {
+    kmp_int32 nsuccessors = thisTdg->RecordMap[i].nsuccessors;
+    kmp_int32 *successors = thisTdg->RecordMap[i].successors;
+    if (nsuccessors) {
+      for (int j = 0; j < nsuccessors; j++) {
+        fprintf(f, "   %d -> %d \n", thisTdg->RecordMap[i].static_id,
+                thisTdg->RecordMap[successors[j]].static_id);
+      }
+    } else {
+      fprintf(f, "   %d \n", thisTdg->RecordMap[i].static_id);
+    }
+  }
+  fprintf(f, "   node [shape=plaintext];\n");
+  fprintf(f, "    subgraph cluster_1000 {\n");
+  fprintf(f, "      label=\"User functions:\"; style=\"rounded\";\n");
+  fprintf(f, " user_funcs [label=<<table border=\"0\" cellspacing=\"10\" "
+             "cellborder=\"0\">\n");
+  for (int i = 0; i < thisTdg->colorMapSize; i++) {
+    if (thisTdg->colorMap[i].td_ident == nullptr)
+      break;
+    fprintf(f, "      <tr>\n");
+    fprintf(f,
+            "         <td bgcolor=\"%s\" width=\"15px\" border=\"1\"></td>\n",
+            thisTdg->colorMap[i].color);
+    fprintf(f, "         <td>%s</td>\n", thisTdg->colorMap[i].td_ident);
+    fprintf(f, "      </tr>\n");
+  }
+  fprintf(f, "      </table>>]\n");
+  fprintf(f, "}}\n");
+  fclose(f);
+}
+
 void __kmp_end_record(kmp_tdg_info *tdg, kmp_int32 gtid) {
   // Store roots
   kmp_node_info *ThisRecordMap = tdg->RecordMap;
@@ -2351,6 +2455,11 @@ void __kmp_end_record(kmp_tdg_info *tdg, kmp_int32 gtid) {
   tdg->spent_time = 0;
 
   erase_transitive_edges(tdg);
+
+  char *my_env_var = getenv("OMP_PRINT_TDG");
+  if (my_env_var)
+    if (strcmp(my_env_var, "TRUE") == 0)
+      print_tdg_to_dot(&GlobalTdgs[curr_tdg_idx]);
 
   if(thread->th.th_current_task->td_dephash){
 	  __kmp_dephash_free(thread, thread->th.th_current_task->td_dephash);

@@ -2515,6 +2515,10 @@ struct kmp_ident_color {
   const char *color;
 };
 
+struct kmp_ident_task {
+  const char *td_ident;
+};
+
 //Structure that contains a TDG
 struct kmp_tdg_info {
   const char *loc; //Location of the pragma
@@ -2526,7 +2530,7 @@ struct kmp_tdg_info {
   kmp_int32 numRoots; //Number of roots tasks int the TDG
   kmp_int32 *rootTasks; //Array of tasks identifiers that are roots
   kmp_node_info *RecordMap; //Array of TDG nodes
-  // kmp_ident_task *taskIdent; //Array of locations of each TDG node
+  kmp_ident_task *taskIdent; //Array of locations of each TDG node
   kmp_ident_color *colorMap; //Array of colors for the dot output
   kmp_int32 colorIndex; //Index of colors used
   kmp_int32 colorMapSize; //Size of colors array
