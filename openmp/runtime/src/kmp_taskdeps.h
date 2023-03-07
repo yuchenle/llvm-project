@@ -145,8 +145,9 @@ static inline void __kmp_release_deps(kmp_int32 gtid, kmp_taskdata_t *task) {
                 gtid, task));
 
   KMP_ACQUIRE_DEPNODE(gtid, node);
-  node->dn.task =
-      NULL; // mark this task as finished, so no new dependencies are generated
+  // if(!TDG_RECORD(task->tdg->tdgStatus)) // TODO: we need to find a way to keep the dep information from already finished tasks
+    node->dn.task =
+        NULL; // mark this task as finished, so no new dependencies are generated
   KMP_RELEASE_DEPNODE(gtid, node);
 
   kmp_depnode_list_t *next;
