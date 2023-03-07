@@ -20,6 +20,7 @@
 #include "ompt-specific.h"
 #endif
 
+#include <new>
 // TODO: Improve memory allocation? keep a list of pre-allocated structures?
 // allocate in blocks? re-use list finished list entries?
 // TODO: don't use atomic ref counters for stack-allocated nodes.
@@ -235,9 +236,10 @@ static inline void __kmp_track_dependence(kmp_int32 gtid, kmp_depnode_t *source,
     if (!exists) {
       if (SourceInfo->nsuccessors >= SourceInfo->successors_size) {
         SourceInfo->successors_size += SuccessorsIncrement;
-        SourceInfo->successors = (kmp_int32 *)realloc(
-            SourceInfo->successors,
-            SourceInfo->successors_size * sizeof(kmp_int32));
+        kmp_int32 *oldSuccIds = SourceInfo->successors;
+        kmp_int32 *newSuccIds = (kmp_int32 *)__kmp_allocate(SourceInfo->successors_size * sizeof(kmp_int32));
+        SourceInfo->successors = newSuccIds;
+        __kmp_free(oldSuccIds);
       }
 
       SourceInfo->successors[SourceInfo->nsuccessors] = task_sink->td_task_id;
@@ -649,18 +651,20 @@ kmp_int32 __kmpc_omp_task_with_deps(ident_t *loc_ref, kmp_int32 gtid,
       kmp_uint OldSize = new_taskdata->tdg->mapSize;
       new_taskdata->tdg->mapSize = new_taskdata->tdg->mapSize * 2;
       kmp_node_info *oldRecord = new_taskdata->tdg->RecordMap;
+      kmp_ident_task *old_taskIdent = new_taskdata->tdg->taskIdent;
       kmp_node_info *newRecord = (kmp_node_info *)__kmp_allocate(new_taskdata->tdg->mapSize * sizeof(kmp_node_info));
+      kmp_ident_task *new_taskIdent = (kmp_ident_task *)__kmp_allocate(new_taskdata->tdg->mapSize * sizeof(kmp_ident_task));
       //TODO: Protect section, record map may be updated while copying
       KMP_MEMCPY(newRecord, new_taskdata->tdg->RecordMap, OldSize * sizeof(kmp_node_info));
       new_taskdata->tdg->RecordMap = newRecord;
-      __kmp_free(oldRecord);
+      new_taskdata->tdg->taskIdent = new_taskIdent;
 
-      // new_taskdata->tdg->taskIdent =
-      //     (kmp_ident_task *)realloc(new_taskdata->tdg->taskIdent, new_taskdata->tdg->mapSize * sizeof(kmp_ident_task));
+      __kmp_free(oldRecord);
+      __kmp_free(old_taskIdent);
 
       for (kmp_int i = OldSize; i < new_taskdata->tdg->mapSize; i++) {
         kmp_int32 *successorsList =
-            (kmp_int32 *)malloc(SuccessorsSize * sizeof(kmp_int32));
+            (kmp_int32 *)__kmp_allocate(SuccessorsSize * sizeof(kmp_int32));
         new_taskdata->tdg->RecordMap[i].static_id = 0;
         new_taskdata->tdg->RecordMap[i].task = nullptr;
         new_taskdata->tdg->RecordMap[i].successors = successorsList;
@@ -669,7 +673,7 @@ kmp_int32 __kmpc_omp_task_with_deps(ident_t *loc_ref, kmp_int32 gtid,
         new_taskdata->tdg->RecordMap[i].successors_size = SuccessorsSize;
         new_taskdata->tdg->RecordMap[i].static_thread = -1;
         void * pCounters = (void *) &new_taskdata->tdg->RecordMap[i].npredecessors_counter;
-        // new (pCounters) std::atomic<kmp_int32>(0);
+        new (pCounters) std::atomic<kmp_int32>(0);
       }
     }
     new_taskdata->tdg->taskIdent[new_taskdata->td_task_id].td_ident = new_taskdata->td_ident->psource;
