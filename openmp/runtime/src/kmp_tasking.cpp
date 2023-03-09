@@ -26,15 +26,6 @@
 extern "C" void __tgt_target_nowait_query(void **) KMP_WEAK_ATTRIBUTE_INTERNAL;
 #endif
 
-// Colors for the graphviz output, to print tdg.dot
-// TODO?: figure out a way to put this array in another file
-const char *ColorNames[] = {
-    "aquamarine3", "crimson",         "chartreuse",  "blue2",
-    "darkorchid3", "darkgoldenrod1",  "deeppink4",   "gray19",
-    "indigo",      "indianred",       "forestgreen", "navy",
-    "orangered2",  "slateblue3",      "yellowgreen", "salmon",
-    "purple",      "mediumturquoise", "slategray3"};
-
 /* forward declaration */
 static void __kmp_enable_tasking(kmp_task_team_t *task_team,
                                  kmp_info_t *this_thr);
@@ -1645,11 +1636,11 @@ kmp_task_t *__kmp_task_alloc(ident_t *loc_ref, kmp_int32 gtid,
 
   // using TDG_RECORD is weird here since it uses
   // taskdata->tdg->tdgStatus, which is not set here. Though,
-  // the macro is currently evaluated to tdg_recording.
-  if (TDG_RECORD(GlobalTdgs[curr_tdg_idx].tdgStatus)) {
+  // the macro is currently evaluated to __kmp_tdg_recording.
+  if (TDG_RECORD(__kmp_globalTdgs[__kmp_curr_tdg_idx].tdgStatus)) {
     taskdata->is_taskgraph = 1;
-    taskdata->tdg = &GlobalTdgs[curr_tdg_idx];
-    taskdata->td_task_id = KMP_ATOMIC_INC(&tdg_task_id);
+    taskdata->tdg = &__kmp_globalTdgs[__kmp_curr_tdg_idx];
+    taskdata->td_task_id = KMP_ATOMIC_INC(&__kmp_tdg_task_id);
   }
   KA_TRACE(20, ("__kmp_task_alloc(exit): T#%d created task %p parent=%p\n",
                 gtid, taskdata, taskdata->td_parent));
@@ -2015,13 +2006,13 @@ kmp_int32 __kmp_omp_task(kmp_int32 gtid, kmp_task_t *new_task,
 
       for (kmp_int i = OldSize; i < new_taskdata->tdg->mapSize; i++) {
         kmp_int32 *successorsList =
-            (kmp_int32 *)__kmp_allocate(SuccessorsSize * sizeof(kmp_int32));
+            (kmp_int32 *)__kmp_allocate(__kmp_successorsSize * sizeof(kmp_int32));
         new_taskdata->tdg->RecordMap[i].static_id = 0;
         new_taskdata->tdg->RecordMap[i].task = nullptr;
         new_taskdata->tdg->RecordMap[i].successors = successorsList;
         new_taskdata->tdg->RecordMap[i].nsuccessors = 0;
         new_taskdata->tdg->RecordMap[i].npredecessors = 0;
-        new_taskdata->tdg->RecordMap[i].successors_size = SuccessorsSize;
+        new_taskdata->tdg->RecordMap[i].successors_size = __kmp_successorsSize;
         new_taskdata->tdg->RecordMap[i].static_thread = -1;
         void * pCounters = (void *) &new_taskdata->tdg->RecordMap[i].npredecessors_counter;
         new (pCounters) std::atomic<kmp_int32>(0);
@@ -2169,7 +2160,7 @@ void traverse_node(kmp_int32 *edges_to_check, kmp_int32 *num_edges,
         break;
       }
     }
-    if (Visited[successor] == false && nesting_level < MaxNesting)
+    if (Visited[successor] == false && nesting_level < __kmp_maxNesting)
       traverse_node(edges_to_check, num_edges, successor, nesting_level + 1,
                     Visited, thisTdg);
   }
@@ -2212,10 +2203,10 @@ void erase_transitive_edges(kmp_tdg_info *thisTdg) {
 kmp_tdg_info *__kmp_find_tdg(const char *fileName, kmp_int32 lineNumber) {
   // size_t hash = __kmp_hash_tdg(fileName, lineNumber);
   for (int i = 0; i < NUM_TDG_LIMIT; ++i) {
-    if (GlobalTdgs[i].fileName == fileName &&
-        GlobalTdgs[i].lineNumber == lineNumber) {
-      curr_tdg_idx = i;
-      return &GlobalTdgs[i];
+    if (__kmp_globalTdgs[i].fileName == fileName &&
+        __kmp_globalTdgs[i].lineNumber == lineNumber) {
+      __kmp_curr_tdg_idx = i;
+      return &__kmp_globalTdgs[i];
     }
   }
 
@@ -2223,10 +2214,10 @@ kmp_tdg_info *__kmp_find_tdg(const char *fileName, kmp_int32 lineNumber) {
 }
 
 void __kmp_exec_tdg(kmp_int32 gtid, kmp_tdg_info *tdg) {
-  kmp_node_info *ThisRecordMap = tdg->RecordMap;
-  kmp_int32 *ThisRootTasks = tdg->rootTasks;
-  kmp_int32 ThisNumRoots = tdg->numRoots;
-  kmp_int32 ThisNumTasks = tdg->numTasks;
+  kmp_node_info *thisRecordMap = tdg->RecordMap;
+  kmp_int32 *thisRootTasks = tdg->rootTasks;
+  kmp_int32 thisNumRoots = tdg->numRoots;
+  kmp_int32 thisNumTasks = tdg->numTasks;
 
   kmp_info_t *thread = __kmp_threads[gtid];
   kmp_taskdata_t *parent_task = thread->th.th_current_task;
@@ -2237,20 +2228,21 @@ void __kmp_exec_tdg(kmp_int32 gtid, kmp_tdg_info *tdg) {
   }
 
   // Reset remaining tasks
-  KMP_ATOMIC_ST_RLX(&tdg->remainingTasks, ThisNumTasks);
+  KMP_ATOMIC_ST_RLX(&tdg->remainingTasks, thisNumTasks);
 
-  for (kmp_int32 j = 0; j < ThisNumTasks; j++) {
-    kmp_taskdata_t *td = KMP_TASK_TO_TASKDATA(ThisRecordMap[j].task);
+  for (kmp_int32 j = 0; j < thisNumTasks; j++) {
+    kmp_taskdata_t *td = KMP_TASK_TO_TASKDATA(thisRecordMap[j].task);
 
     td->td_parent = parent_task;
-    ThisRecordMap[j].parent_task = parent_task;
+    thisRecordMap[j].parent_task = parent_task;
 
     kmp_taskgroup_t *parentTaskgroup =
-        ThisRecordMap[j].parent_task->td_taskgroup;
+        thisRecordMap[j].parent_task->td_taskgroup;
 
-    KMP_ATOMIC_ST_RLX(&ThisRecordMap[j].npredecessors_counter,
-                      ThisRecordMap[j].npredecessors);
-    KMP_ATOMIC_INC(&ThisRecordMap[j].parent_task->td_incomplete_child_tasks);
+    KMP_ATOMIC_ST_RLX(&thisRecordMap[j].npredecessors_counter,
+                      thisRecordMap[j].npredecessors);
+    KMP_ATOMIC_INC(&thisRecordMap[j].parent_task->td_incomplete_child_tasks);
+
     if (parentTaskgroup) {
       KMP_ATOMIC_INC(&parentTaskgroup->count);
       // The taskgroup is different so we must update it
@@ -2259,58 +2251,58 @@ void __kmp_exec_tdg(kmp_int32 gtid, kmp_tdg_info *tdg) {
       // If the parent doesnt have a taskgroup, remove it from the task
       td->td_taskgroup = nullptr;
     }
-    if (ThisRecordMap[j].parent_task->td_flags.tasktype == TASK_EXPLICIT)
-      KMP_ATOMIC_INC(&ThisRecordMap[j].parent_task->td_allocated_child_tasks);
+    if (thisRecordMap[j].parent_task->td_flags.tasktype == TASK_EXPLICIT)
+      KMP_ATOMIC_INC(&thisRecordMap[j].parent_task->td_allocated_child_tasks);
   }
 
-  for (kmp_int32 j = 0; j < ThisNumRoots; ++j) {
-    __kmp_omp_task(gtid, ThisRecordMap[ThisRootTasks[j]].task, true);
+  for (kmp_int32 j = 0; j < thisNumRoots; ++j) {
+    __kmp_omp_task(gtid, thisRecordMap[thisRootTasks[j]].task, true);
   }
 }
 
 static inline void __kmp_start_record(kmp_int32 gtid, kmp_taskgraph_flags_t *flags, const char *fileName, int lineNumber) {
 
   // Initializing the TDG structure
-  GlobalTdgs[curr_tdg_idx].loc = nullptr;
-  GlobalTdgs[curr_tdg_idx].fileName = fileName;
-  GlobalTdgs[curr_tdg_idx].lineNumber = lineNumber;
-  GlobalTdgs[curr_tdg_idx].tdgId = num_tdg;
-  GlobalTdgs[curr_tdg_idx].mapSize = INIT_MAPSIZE;
-  GlobalTdgs[curr_tdg_idx].numRoots = -1;
-  GlobalTdgs[curr_tdg_idx].rootTasks = nullptr;
-  GlobalTdgs[curr_tdg_idx].tdgStatus = TDG_RECORDING;
-  GlobalTdgs[curr_tdg_idx].numTasks = 0;
-  GlobalTdgs[curr_tdg_idx].rec_num_taskred = 0;
-  GlobalTdgs[curr_tdg_idx].rec_taskred_data = nullptr;
+  __kmp_globalTdgs[__kmp_curr_tdg_idx].loc = nullptr;
+  __kmp_globalTdgs[__kmp_curr_tdg_idx].fileName = fileName;
+  __kmp_globalTdgs[__kmp_curr_tdg_idx].lineNumber = lineNumber;
+  __kmp_globalTdgs[__kmp_curr_tdg_idx].tdgId = __kmp_num_tdg;
+  __kmp_globalTdgs[__kmp_curr_tdg_idx].mapSize = INIT_MAPSIZE;
+  __kmp_globalTdgs[__kmp_curr_tdg_idx].numRoots = -1;
+  __kmp_globalTdgs[__kmp_curr_tdg_idx].rootTasks = nullptr;
+  __kmp_globalTdgs[__kmp_curr_tdg_idx].tdgStatus = TDG_RECORDING;
+  __kmp_globalTdgs[__kmp_curr_tdg_idx].numTasks = 0;
+  __kmp_globalTdgs[__kmp_curr_tdg_idx].rec_num_taskred = 0;
+  __kmp_globalTdgs[__kmp_curr_tdg_idx].rec_taskred_data = nullptr;
 
   // Initializing the list of nodes in this TDG
-  kmp_node_info *ThisRecordMap = (kmp_node_info *)__kmp_allocate(INIT_MAPSIZE * sizeof(kmp_node_info));
-  kmp_ident_task *ThisTaskIdentMap = (kmp_ident_task *)__kmp_allocate(INIT_MAPSIZE * sizeof(kmp_ident_task));
-  kmp_int32 ThisColorMapSize = 20;
-  kmp_ident_color *ThisColorMap = (kmp_ident_color *)__kmp_allocate(ThisColorMapSize * sizeof(kmp_ident_color));
+  kmp_node_info *thisRecordMap = (kmp_node_info *)__kmp_allocate(INIT_MAPSIZE * sizeof(kmp_node_info));
+  kmp_ident_task *thisTaskIdentMap = (kmp_ident_task *)__kmp_allocate(INIT_MAPSIZE * sizeof(kmp_ident_task));
+  kmp_int32 thisColorMapSize = 20;
+  kmp_ident_color *thisColorMap = (kmp_ident_color *)__kmp_allocate(thisColorMapSize * sizeof(kmp_ident_color));
   for (kmp_int32 i = 0; i < INIT_MAPSIZE; i++) {
-    // ThisTaskIdentMap[i] = {nullptr};
+    // thisTaskIdentMap[i] = {nullptr};
     kmp_int32 *successorsList =
-        (kmp_int32 *)__kmp_allocate(SuccessorsSize * sizeof(kmp_int32));
-    ThisRecordMap[i].static_id = 0;
-    ThisRecordMap[i].task = nullptr;
-    ThisRecordMap[i].successors = successorsList;
-    ThisRecordMap[i].nsuccessors = 0;
-    ThisRecordMap[i].npredecessors = 0;
-    ThisRecordMap[i].successors_size = SuccessorsSize;
-    ThisRecordMap[i].static_thread = -1;
-    // new &ThisRecordMap[i].npredecessors_counte is it possible to not use pCounters?
-    void *pCounters = (void *)&ThisRecordMap[i].npredecessors_counter;
+        (kmp_int32 *)__kmp_allocate(__kmp_successorsSize * sizeof(kmp_int32));
+    thisRecordMap[i].static_id = 0;
+    thisRecordMap[i].task = nullptr;
+    thisRecordMap[i].successors = successorsList;
+    thisRecordMap[i].nsuccessors = 0;
+    thisRecordMap[i].npredecessors = 0;
+    thisRecordMap[i].successors_size = __kmp_successorsSize;
+    thisRecordMap[i].static_thread = -1;
+    // new &thisRecordMap[i].npredecessors_counte is it possible to not use pCounters?
+    void *pCounters = (void *)&thisRecordMap[i].npredecessors_counter;
     new (pCounters) std::atomic<kmp_int32>(0);
   }
 
-  GlobalTdgs[curr_tdg_idx].RecordMap = ThisRecordMap;
-  GlobalTdgs[curr_tdg_idx].taskIdent = ThisTaskIdentMap;
-  GlobalTdgs[curr_tdg_idx].colorMap = ThisColorMap;
-  GlobalTdgs[curr_tdg_idx].colorIndex = 0;
-  GlobalTdgs[curr_tdg_idx].colorMapSize = 20;
+  __kmp_globalTdgs[__kmp_curr_tdg_idx].RecordMap = thisRecordMap;
+  __kmp_globalTdgs[__kmp_curr_tdg_idx].taskIdent = thisTaskIdentMap;
+  __kmp_globalTdgs[__kmp_curr_tdg_idx].colorMap = thisColorMap;
+  __kmp_globalTdgs[__kmp_curr_tdg_idx].colorIndex = 0;
+  __kmp_globalTdgs[__kmp_curr_tdg_idx].colorMapSize = 20;
 
-  tdg_recording = true;
+  __kmp_tdg_recording = true;
 }
 // __kmpc_start_record_task: Wrapper around __kmp_start_record to mark
 // the beginning of the record process of a task region
@@ -2334,15 +2326,16 @@ kmp_int32 __kmpc_start_record_task(ident_t *loc_ref, kmp_int32 gtid, kmp_int32 i
   kmp_taskgraph_flags_t *flags = (kmp_taskgraph_flags_t *)&input_flags;
   __kmpc_taskgroup(loc_ref, gtid); //for now, but may be released with remainingTasks to optimize
   if (kmp_tdg_info *tdg = __kmp_find_tdg(fileName, lineNumber)) {
+    // TODO use re_record flag
     __kmp_exec_tdg(gtid, tdg);
     res = 0;
   } else {
-    curr_tdg_idx = num_tdg;
-    if (curr_tdg_idx > NUM_TDG_LIMIT)
+    __kmp_curr_tdg_idx = __kmp_num_tdg;
+    if (__kmp_curr_tdg_idx > NUM_TDG_LIMIT)
       printf("internal OpenMP error: Max number of TDGs exceeded\n");
 
     __kmp_start_record(gtid, flags, fileName, lineNumber);
-    num_tdg++;
+    __kmp_num_tdg++;
     res = 1;
   }
   return res;
@@ -2370,11 +2363,11 @@ void print_tdg_to_dot(kmp_tdg_info *thisTdg) {
     for (int j = 0; j < thisTdg->colorMapSize; j++) {
       if (thisTdg->colorMap[j].td_ident == nullptr) {
         thisTdg->colorMap[j].td_ident = ident;
-        thisTdg->colorMap[j].color = ColorNames[thisTdg->colorIndex];
+        thisTdg->colorMap[j].color = __kmp_colorNames[thisTdg->colorIndex];
         thisTdg->colorIndex++;
         color = thisTdg->colorMap[j].color;
         if (thisTdg->colorIndex >=
-            (int)(sizeof(ColorNames) / sizeof(ColorNames[0])))
+            (int)(sizeof(__kmp_colorNames) / sizeof(__kmp_colorNames[0])))
           thisTdg->colorIndex = 0;
         break;
       } else if (thisTdg->colorMap[j].td_ident == ident) {
@@ -2396,11 +2389,11 @@ void print_tdg_to_dot(kmp_tdg_info *thisTdg) {
       __kmp_free(oldColorMap);
 
       thisTdg->colorMap[OldSize].td_ident = ident;
-      thisTdg->colorMap[OldSize].color = ColorNames[thisTdg->colorIndex];
+      thisTdg->colorMap[OldSize].color = __kmp_colorNames[thisTdg->colorIndex];
       thisTdg->colorIndex++;
       color = thisTdg->colorMap[OldSize].color;
       if (thisTdg->colorIndex >=
-          (int)(sizeof(ColorNames) / sizeof(ColorNames[0])))
+          (int)(sizeof(__kmp_colorNames) / sizeof(__kmp_colorNames[0])))
         thisTdg->colorIndex = 0;
       for (int j = OldSize + 1; j < thisTdg->colorMapSize; j++) {
         thisTdg->colorMap[j] = {nullptr, nullptr};
@@ -2448,23 +2441,23 @@ void print_tdg_to_dot(kmp_tdg_info *thisTdg) {
 
 void __kmp_end_record(kmp_tdg_info *tdg, kmp_int32 gtid) {
   // Store roots
-  kmp_node_info *ThisRecordMap = tdg->RecordMap;
-  kmp_int32 *ThisRootTasks = (kmp_int32 *)__kmp_allocate(
-      GlobalTdgs[curr_tdg_idx].numTasks * sizeof(kmp_int32));
-  kmp_int32 ThisMapSize = tdg->mapSize;
-  kmp_int32 ThisNumRoots = 0;
+  kmp_node_info *thisRecordMap = tdg->RecordMap;
+  kmp_int32 *thisRootTasks = (kmp_int32 *)__kmp_allocate(
+      __kmp_globalTdgs[__kmp_curr_tdg_idx].numTasks * sizeof(kmp_int32));
+  kmp_int32 thisMapSize = tdg->mapSize;
+  kmp_int32 thisNumRoots = 0;
   kmp_info_t *thread = __kmp_threads[gtid];
 
   for (kmp_int32 i = 0; i < tdg->numTasks; i++) {
-    if (ThisRecordMap[i].npredecessors == 0) {
-      ThisRootTasks[ThisNumRoots++] = i;
+    if (thisRecordMap[i].npredecessors == 0) {
+      thisRootTasks[thisNumRoots++] = i;
     }
   }
 
   // Update with roots info and mapsize
-  tdg->mapSize = ThisMapSize;
-  tdg->numRoots = ThisNumRoots;
-  tdg->rootTasks = ThisRootTasks;
+  tdg->mapSize = thisMapSize;
+  tdg->numRoots = thisNumRoots;
+  tdg->rootTasks = thisRootTasks;
   tdg->tdgStatus = TDG_NONE;
   tdg->spent_time = 0;
 
@@ -2473,7 +2466,7 @@ void __kmp_end_record(kmp_tdg_info *tdg, kmp_int32 gtid) {
   char *my_env_var = getenv("OMP_PRINT_TDG");
   if (my_env_var)
     if (strcmp(my_env_var, "TRUE") == 0)
-      print_tdg_to_dot(&GlobalTdgs[curr_tdg_idx]);
+      print_tdg_to_dot(&__kmp_globalTdgs[__kmp_curr_tdg_idx]);
 
   if (thread->th.th_current_task->td_dephash) {
     __kmp_dephash_free(thread, thread->th.th_current_task->td_dephash);
@@ -2482,8 +2475,8 @@ void __kmp_end_record(kmp_tdg_info *tdg, kmp_int32 gtid) {
 
   // Reset predecessor counter
   for (kmp_int32 i = 0; i < tdg->numTasks; i++) {
-    KMP_ATOMIC_ST_RLX(&ThisRecordMap[i].npredecessors_counter,
-                      ThisRecordMap[i].npredecessors);
+    KMP_ATOMIC_ST_RLX(&thisRecordMap[i].npredecessors_counter,
+                      thisRecordMap[i].npredecessors);
   }
 }
 
@@ -2496,7 +2489,7 @@ void __kmpc_end_record_task(ident_t *loc_ref, kmp_int32 gtid, kmp_int32 input_fl
 
   if (TDG_RECORD(tdg->tdgStatus)) {
     __kmp_end_record(tdg, gtid);
-    tdg_recording = false;
+    __kmp_tdg_recording = false;
   }
   tdg->tdgStatus = TDG_NONE;
 }
@@ -2924,12 +2917,12 @@ without help of the runtime library.
 */
 void *__kmpc_task_reduction_init(int gtid, int num, void *data) {
   // would like to use TDG_RECORD(tdgStatus) but cannot access to tdg
-  if (TDG_RECORD(GlobalTdgs[curr_tdg_idx].tdgStatus)) {
-    kmp_tdg_info *ThisTdg = &GlobalTdgs[curr_tdg_idx];
-    ThisTdg->rec_taskred_data =
+  if (TDG_RECORD(__kmp_globalTdgs[__kmp_curr_tdg_idx].tdgStatus)) {
+    kmp_tdg_info *thisTdg = &__kmp_globalTdgs[__kmp_curr_tdg_idx];
+    thisTdg->rec_taskred_data =
         __kmp_allocate(sizeof(kmp_task_red_input_t) * num);
-    ThisTdg->rec_num_taskred = num;
-    KMP_MEMCPY(ThisTdg->rec_taskred_data, data,
+    thisTdg->rec_num_taskred = num;
+    KMP_MEMCPY(thisTdg->rec_taskred_data, data,
                sizeof(kmp_task_red_input_t) * num);
   }
   return __kmp_task_reduction_init(gtid, num, (kmp_task_red_input_t *)data);
@@ -2995,7 +2988,7 @@ void *__kmpc_task_reduction_get_th_data(int gtid, void *tskgrp, void *data) {
   kmp_int32 tid = thread->th.th_info.ds.ds_tid;
 
   // upstream tdg
-  kmp_tdg_status tdgStatus = GlobalTdgs[curr_tdg_idx].tdgStatus;
+  kmp_tdg_status tdgStatus = __kmp_globalTdgs[__kmp_curr_tdg_idx].tdgStatus;
   if (thread->th.th_current_task->is_taskgraph && !TDG_RECORD(tdgStatus)) {
     tg = thread->th.th_current_task->td_taskgroup;
     KMP_ASSERT(tg != NULL);
@@ -4960,7 +4953,7 @@ kmp_task_t *__kmp_task_dup_alloc(kmp_info_t *thread, kmp_task_t *task_src,
   if (!taskdata->is_taskgraph || from_taskloop_recur)
     taskdata->td_task_id = KMP_GEN_TASK_ID();
   else if (taskdata->is_taskgraph && TDG_RECORD(taskdata_src->tdg->tdgStatus))
-    taskdata->td_task_id = KMP_ATOMIC_INC(&tdg_task_id);
+    taskdata->td_task_id = KMP_ATOMIC_INC(&__kmp_tdg_task_id);
   if (task->shareds != NULL) { // need setup shareds pointer
     shareds_offset = (char *)task_src->shareds - (char *)taskdata_src;
     task->shareds = &((char *)taskdata)[shareds_offset];
@@ -5461,7 +5454,7 @@ static void __kmp_taskloop(ident_t *loc, int gtid, kmp_task_t *task, int if_val,
     __kmpc_taskgroup(loc, gtid);
   }
 
-  KMP_ATOMIC_DEC(&tdg_task_id);
+  KMP_ATOMIC_DEC(&__kmp_tdg_task_id);
   // =========================================================================
   // calculate loop parameters
   kmp_taskloop_bounds_t task_bounds(task, lb, ub);

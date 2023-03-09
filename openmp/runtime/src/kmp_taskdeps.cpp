@@ -235,7 +235,7 @@ static inline void __kmp_track_dependence(kmp_int32 gtid, kmp_depnode_t *source,
     }
     if (!exists) {
       if (SourceInfo->nsuccessors >= SourceInfo->successors_size) {
-        SourceInfo->successors_size += SuccessorsIncrement;
+        SourceInfo->successors_size += __kmp_successorsIncrement;
         kmp_int32 *oldSuccIds = SourceInfo->successors;
         kmp_int32 *newSuccIds = (kmp_int32 *)__kmp_allocate(SourceInfo->successors_size * sizeof(kmp_int32));
         SourceInfo->successors = newSuccIds;
@@ -675,13 +675,13 @@ kmp_int32 __kmpc_omp_task_with_deps(ident_t *loc_ref, kmp_int32 gtid,
 
       for (kmp_int i = OldSize; i < new_taskdata->tdg->mapSize; i++) {
         kmp_int32 *successorsList =
-            (kmp_int32 *)__kmp_allocate(SuccessorsSize * sizeof(kmp_int32));
+            (kmp_int32 *)__kmp_allocate(__kmp_successorsSize * sizeof(kmp_int32));
         new_taskdata->tdg->RecordMap[i].static_id = 0;
         new_taskdata->tdg->RecordMap[i].task = nullptr;
         new_taskdata->tdg->RecordMap[i].successors = successorsList;
         new_taskdata->tdg->RecordMap[i].nsuccessors = 0;
         new_taskdata->tdg->RecordMap[i].npredecessors = 0;
-        new_taskdata->tdg->RecordMap[i].successors_size = SuccessorsSize;
+        new_taskdata->tdg->RecordMap[i].successors_size = __kmp_successorsSize;
         new_taskdata->tdg->RecordMap[i].static_thread = -1;
         void * pCounters = (void *) &new_taskdata->tdg->RecordMap[i].npredecessors_counter;
         new (pCounters) std::atomic<kmp_int32>(0);

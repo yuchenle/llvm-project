@@ -565,12 +565,20 @@ int __kmp_nesting_mode_nlevels = 1;
 int *__kmp_nesting_nth_level;
 
 // global variables used by taskgraph
-kmp_tdg_info GlobalTdgs[NUM_TDG_LIMIT];
-bool tdg_recording = false;
-kmp_int32 curr_tdg_idx;
-kmp_int32 num_tdg = 0;
-kmp_int32 SuccessorsSize = 10; //Initial succesor size list for recording
-kmp_int32 SuccessorsIncrement = 5; //Allocation increment when recording
-std::atomic<kmp_int32> tdg_task_id = 0;
-kmp_int32 MaxNesting = 4; //Nesting when erasing edges
+kmp_tdg_info __kmp_globalTdgs[NUM_TDG_LIMIT];
+bool __kmp_tdg_recording = false;
+kmp_int32 __kmp_curr_tdg_idx;
+kmp_int32 __kmp_num_tdg = 0;
+kmp_int32 __kmp_successorsSize = 10; //Initial succesor size list for recording
+kmp_int32 __kmp_successorsIncrement = 5; //Allocation increment when recording
+std::atomic<kmp_int32> __kmp_tdg_task_id = 0;
+kmp_int32 __kmp_maxNesting = 4; //Nesting when erasing edges
+// Colors for the graphviz output, to print tdg.dot
+// TODO?: figure out a way to put this array in another file
+const char *__kmp_colorNames[] = {
+    "aquamarine3", "crimson",         "chartreuse",  "blue2",
+    "darkorchid3", "darkgoldenrod1",  "deeppink4",   "gray19",
+    "indigo",      "indianred",       "forestgreen", "navy",
+    "orangered2",  "slateblue3",      "yellowgreen", "salmon",
+    "purple",      "mediumturquoise", "slategray3"};
 // end of file //

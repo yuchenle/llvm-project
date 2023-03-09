@@ -2544,17 +2544,18 @@ struct kmp_tdg_info {
   kmp_int32 rec_num_taskred;
 };
 
-extern kmp_tdg_info GlobalTdgs[NUM_TDG_LIMIT];
-extern bool tdg_recording;
-extern kmp_int32 curr_tdg_idx;
-extern kmp_int32 SuccessorsSize;
-extern kmp_int32 SuccessorsIncrement;
-extern std::atomic<kmp_int32> tdg_task_id;
-extern kmp_int32 MaxNesting;
-extern kmp_int32 num_tdg;
+extern kmp_tdg_info __kmp_globalTdgs[NUM_TDG_LIMIT];
+extern bool __kmp_tdg_recording;
+extern kmp_int32 __kmp_curr_tdg_idx;
+extern kmp_int32 __kmp_successorsSize;
+extern kmp_int32 __kmp_successorsIncrement;
+extern std::atomic<kmp_int32> __kmp_tdg_task_id;
+extern kmp_int32 __kmp_maxNesting;
+extern kmp_int32 __kmp_num_tdg;
+extern const char *__kmp_colorNames[19];
 
 // the macro can be modified to tdg_status == TDG_RECORDING
-#define TDG_RECORD(tdg_status) tdg_recording
+#define TDG_RECORD(tdg_status) __kmp_tdg_recording
 
 #ifdef BUILD_TIED_TASK_STACK
 
