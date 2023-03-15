@@ -663,7 +663,6 @@ kmp_int32 __kmpc_omp_task_with_deps(ident_t *loc_ref, kmp_int32 gtid,
       __kmp_acquire_bootstrap_lock(&tdg->graph_lock);
       if (new_taskdata->td_task_id >= tdg->mapSize) {
         kmp_uint OldSize = tdg->mapSize;
-        tdg->mapSize = tdg->mapSize * 2;
         kmp_node_info *oldRecord = tdg->RecordMap;
         kmp_ident_task *old_taskIdent = tdg->taskIdent;
         kmp_node_info *newRecord = (kmp_node_info *)__kmp_allocate(tdg->mapSize * sizeof(kmp_node_info));
@@ -689,6 +688,9 @@ kmp_int32 __kmpc_omp_task_with_deps(ident_t *loc_ref, kmp_int32 gtid,
           void * pCounters = (void *) &tdg->RecordMap[i].npredecessors_counter;
           new (pCounters) std::atomic<kmp_int32>(0);
         }
+        // update the size at the end, so that we avoid other
+        // threads use OldRecordMap while mapSize is already updated
+        tdg->mapSize = tdg->mapSize * 2;
       }
       __kmp_release_bootstrap_lock(&tdg->graph_lock);
     }
