@@ -89,7 +89,7 @@ OpFoldResult getAsOpFoldResult(Value val) {
 /// Given an array of values, try to extract a constant Attribute from each
 /// value. If this fails, return the original value.
 SmallVector<OpFoldResult> getAsOpFoldResult(ValueRange values) {
-  return llvm::to_vector<4>(
+  return llvm::to_vector(
       llvm::map_range(values, [](Value v) { return getAsOpFoldResult(v); }));
 }
 
@@ -100,6 +100,16 @@ SmallVector<OpFoldResult> getAsOpFoldResult(ArrayAttr arrayAttr) {
   for (Attribute a : arrayAttr)
     res.push_back(a);
   return res;
+}
+
+OpFoldResult getAsIndexOpFoldResult(MLIRContext *ctx, int64_t val) {
+  return IntegerAttr::get(IndexType::get(ctx), val);
+}
+
+SmallVector<OpFoldResult> getAsIndexOpFoldResult(MLIRContext *ctx,
+                                                 ArrayRef<int64_t> values) {
+  return llvm::to_vector(llvm::map_range(
+      values, [ctx](int64_t v) { return getAsIndexOpFoldResult(ctx, v); }));
 }
 
 /// If ofr is a constant integer or an IntegerAttr, return the integer.
@@ -146,18 +156,6 @@ bool isEqualConstantIntOrValueArray(ArrayRef<OpFoldResult> ofrs1,
   return true;
 }
 
-/// Helper function to convert a vector of `OpFoldResult`s into a vector of
-/// `Value`s. For each `OpFoldResult` in `valueOrAttrVec` return the fold result
-/// if it casts to  a `Value` or create an index-type constant if it casts to
-/// `IntegerAttr`. No other attribute types are supported.
-SmallVector<Value> getAsValues(OpBuilder &b, Location loc,
-                               ArrayRef<OpFoldResult> valueOrAttrVec) {
-  return llvm::to_vector<4>(
-      llvm::map_range(valueOrAttrVec, [&](OpFoldResult value) -> Value {
-        return getValueOrCreateConstantIndexOp(b, loc, value);
-      }));
-}
-
 /// Return a vector of OpFoldResults with the same size a staticValues, but all
 /// elements for which ShapedType::isDynamic is true, will be replaced by
 /// dynamicValues.
@@ -192,6 +190,36 @@ decomposeMixedValues(Builder &b,
     }
   }
   return {b.getI64ArrayAttr(staticValues), dynamicValues};
+}
+
+/// Helper to sort `values` according to matching `keys`.
+template <typename K, typename V>
+static SmallVector<V>
+getValuesSortedByKeyImpl(ArrayRef<K> keys, ArrayRef<V> values,
+                         llvm::function_ref<bool(K, K)> compare) {
+  if (keys.empty())
+    return SmallVector<V>{values};
+  assert(keys.size() == values.size() && "unexpected mismatching sizes");
+  auto indices = llvm::to_vector(llvm::seq<int64_t>(0, values.size()));
+  std::sort(indices.begin(), indices.end(),
+            [&](int64_t i, int64_t j) { return compare(keys[i], keys[j]); });
+  SmallVector<V> res;
+  res.reserve(values.size());
+  for (int64_t i = 0, e = indices.size(); i < e; ++i)
+    res.push_back(values[indices[i]]);
+  return res;
+}
+
+SmallVector<Value>
+getValuesSortedByKey(ArrayRef<Attribute> keys, ArrayRef<Value> values,
+                     llvm::function_ref<bool(Attribute, Attribute)> compare) {
+  return getValuesSortedByKeyImpl(keys, values, compare);
+}
+
+SmallVector<OpFoldResult>
+getValuesSortedByKey(ArrayRef<Attribute> keys, ArrayRef<OpFoldResult> values,
+                     llvm::function_ref<bool(Attribute, Attribute)> compare) {
+  return getValuesSortedByKeyImpl(keys, values, compare);
 }
 
 } // namespace mlir
