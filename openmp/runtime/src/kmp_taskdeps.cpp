@@ -657,41 +657,46 @@ kmp_int32 __kmpc_omp_task_with_deps(ident_t *loc_ref, kmp_int32 gtid,
 
   // upstream taskgraph
   if(new_taskdata->is_taskgraph && TDG_RECORD(new_taskdata->tdg->tdgStatus)) {
+    kmp_tdg_info *tdg = new_taskdata->tdg;
     //extend recordMap if needed
-    if (new_taskdata->td_task_id >= new_taskdata->tdg->mapSize) {
-      kmp_uint OldSize = new_taskdata->tdg->mapSize;
-      new_taskdata->tdg->mapSize = new_taskdata->tdg->mapSize * 2;
-      kmp_node_info *oldRecord = new_taskdata->tdg->RecordMap;
-      kmp_ident_task *old_taskIdent = new_taskdata->tdg->taskIdent;
-      kmp_node_info *newRecord = (kmp_node_info *)__kmp_allocate(new_taskdata->tdg->mapSize * sizeof(kmp_node_info));
-      kmp_ident_task *new_taskIdent = (kmp_ident_task *)__kmp_allocate(new_taskdata->tdg->mapSize * sizeof(kmp_ident_task));
-      //TODO: Protect section, record map may be updated while copying
-      KMP_MEMCPY(newRecord, new_taskdata->tdg->RecordMap, OldSize * sizeof(kmp_node_info));
-      new_taskdata->tdg->RecordMap = newRecord;
-      new_taskdata->tdg->taskIdent = new_taskIdent;
+    if (new_taskdata->td_task_id >= tdg->mapSize) {
+      __kmp_acquire_bootstrap_lock(&tdg->graph_lock);
+      if (new_taskdata->td_task_id >= tdg->mapSize) {
+        kmp_uint OldSize = tdg->mapSize;
+        tdg->mapSize = tdg->mapSize * 2;
+        kmp_node_info *oldRecord = tdg->RecordMap;
+        kmp_ident_task *old_taskIdent = tdg->taskIdent;
+        kmp_node_info *newRecord = (kmp_node_info *)__kmp_allocate(tdg->mapSize * sizeof(kmp_node_info));
+        kmp_ident_task *new_taskIdent = (kmp_ident_task *)__kmp_allocate(tdg->mapSize * sizeof(kmp_ident_task));
+        //TODO: Protect section, record map may be updated while copying
+        KMP_MEMCPY(newRecord, tdg->RecordMap, OldSize * sizeof(kmp_node_info));
+        tdg->RecordMap = newRecord;
+        tdg->taskIdent = new_taskIdent;
 
-      __kmp_free(oldRecord);
-      __kmp_free(old_taskIdent);
+        __kmp_free(oldRecord);
+        __kmp_free(old_taskIdent);
 
-      for (kmp_int i = OldSize; i < new_taskdata->tdg->mapSize; i++) {
-        kmp_int32 *successorsList =
-            (kmp_int32 *)__kmp_allocate(__kmp_successorsSize * sizeof(kmp_int32));
-        new_taskdata->tdg->RecordMap[i].static_id = 0;
-        new_taskdata->tdg->RecordMap[i].task = nullptr;
-        new_taskdata->tdg->RecordMap[i].successors = successorsList;
-        new_taskdata->tdg->RecordMap[i].nsuccessors = 0;
-        new_taskdata->tdg->RecordMap[i].npredecessors = 0;
-        new_taskdata->tdg->RecordMap[i].successors_size = __kmp_successorsSize;
-        new_taskdata->tdg->RecordMap[i].static_thread = -1;
-        void * pCounters = (void *) &new_taskdata->tdg->RecordMap[i].npredecessors_counter;
-        new (pCounters) std::atomic<kmp_int32>(0);
+        for (kmp_int i = OldSize; i < tdg->mapSize; i++) {
+          kmp_int32 *successorsList =
+              (kmp_int32 *)__kmp_allocate(__kmp_successorsSize * sizeof(kmp_int32));
+          tdg->RecordMap[i].static_id = 0;
+          tdg->RecordMap[i].task = nullptr;
+          tdg->RecordMap[i].successors = successorsList;
+          tdg->RecordMap[i].nsuccessors = 0;
+          tdg->RecordMap[i].npredecessors = 0;
+          tdg->RecordMap[i].successors_size = __kmp_successorsSize;
+          tdg->RecordMap[i].static_thread = -1;
+          void * pCounters = (void *) &tdg->RecordMap[i].npredecessors_counter;
+          new (pCounters) std::atomic<kmp_int32>(0);
+        }
       }
+      __kmp_release_bootstrap_lock(&tdg->graph_lock);
     }
-    new_taskdata->tdg->taskIdent[new_taskdata->td_task_id].td_ident = new_taskdata->td_ident->psource;
-    new_taskdata->tdg->RecordMap[new_taskdata->td_task_id].static_id = new_taskdata->td_task_id;
-    new_taskdata->tdg->RecordMap[new_taskdata->td_task_id].task = new_task;
-    new_taskdata->tdg->RecordMap[new_taskdata->td_task_id].parent_task = new_taskdata->td_parent;
-    new_taskdata->tdg->numTasks++;
+    tdg->taskIdent[new_taskdata->td_task_id].td_ident = new_taskdata->td_ident->psource;
+    tdg->RecordMap[new_taskdata->td_task_id].static_id = new_taskdata->td_task_id;
+    tdg->RecordMap[new_taskdata->td_task_id].task = new_task;
+    tdg->RecordMap[new_taskdata->td_task_id].parent_task = new_taskdata->td_parent;
+    KMP_ATOMIC_INC(&tdg->numTasks);
   }
 #if OMPT_SUPPORT
   if (ompt_enabled.enabled) {

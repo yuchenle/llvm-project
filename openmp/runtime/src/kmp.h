@@ -2535,7 +2535,8 @@ struct kmp_tdg_info {
   kmp_int32 colorIndex; //Index of colors used
   kmp_int32 colorMapSize; //Size of colors array
   kmp_tdg_status tdgStatus; //Status of the TDG (recording, filling data...)
-  kmp_int32 numTasks; //Number of TDG nodes
+  std::atomic<kmp_int32> numTasks; //Number of TDG nodes
+  kmp_bootstrap_lock_t graph_lock; // protect graph attributes when updated via taskloop_recur
   std::atomic<kmp_int32> remainingTasks; //Used to know if the TDG is finished
   double spent_time; // time spent to execute this tdg, in us
   // taskloop reduction related
@@ -2656,7 +2657,6 @@ struct kmp_taskdata { /* aligned during dynamic allocation       */
   ompt_task_info_t ompt_task_info;
 #endif
   bool is_taskgraph = 0;// whether the task is within a taskgraph
-  bool is_taskloop = 0; // indicates whether the taskdata is from taskloop
   kmp_tdg_info *tdg;    // used to associate task with a tdg
   kmp_target_data_t td_target_data;
 }; // struct kmp_taskdata
