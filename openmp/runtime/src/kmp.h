@@ -60,11 +60,6 @@
 #undef KMP_CANCEL_THREADS
 #endif
 
-//Maximum number of TDGs
-#define NUM_TDG_LIMIT 100
-//Initial number of allocated nodes while recording
-#define INIT_MAPSIZE 50
-
 #include <signal.h>
 #include <stdarg.h>
 #include <stddef.h>
@@ -2431,7 +2426,6 @@ typedef struct kmp_base_depnode {
   kmp_lock_t *mtx_locks[MAX_MTX_DEPS]; /* lock mutexinoutset dependent tasks */
   kmp_int32 mtx_num_locks; /* number of locks in mtx_locks array */
   kmp_lock_t lock; /* guards shared fields: task, successors */
-  kmp_uint32 part_id;
 #if KMP_SUPPORT_GRAPH_OUTPUT
   kmp_uint32 id;
 #endif
@@ -2487,6 +2481,13 @@ typedef struct {
   } ed;
 } kmp_event_t;
 
+// Maximum number of TDGs
+#define NUM_TDG_LIMIT 100
+// Initial number of allocated nodes while recording
+#define INIT_MAPSIZE 50
+// Parentheses around "==" condition for evaluation order purposes
+#define TDG_RECORD(tdg_status) (tdg_status == KMP_TDG_RECORDING)
+
 typedef struct kmp_taskgraph_flags { /*This needs to be exactly 32 bits */
   unsigned nowait : 1;
   unsigned re_record : 1;
@@ -2494,69 +2495,43 @@ typedef struct kmp_taskgraph_flags { /*This needs to be exactly 32 bits */
 } kmp_taskgraph_flags_t;
 
 //Represents a TDG node
-struct kmp_node_info {
-  kmp_int32 static_id; //Unique id of the node
+typedef struct kmp_node_info {
   kmp_task_t *task; //Pointer to the actual task
   kmp_int32 *successors; //Array of the succesors ids
   kmp_int32 nsuccessors; //Number of succesors of the node
   std::atomic<kmp_int32> npredecessors_counter; //Number of predessors on the fly
   kmp_int32 npredecessors; //Total number of predecessors
-  kmp_int32 successors_size; //Number of allocated succesors ids
-  kmp_int32 static_thread; //Thread assigned for the node, in case static mapping is enabled
-
+  kmp_int32 successors_size; // Number of allocated succesors ids
   kmp_taskdata_t *parent_task; //Parent implicit task
+} kmp_node_info_t;
 
-};
-
-enum kmp_tdg_status { TDG_NONE, TDG_RECORDING, TDG_FILL_DATA, TDG_PREALLOC, TDG_EXECUTING};
-
-struct kmp_ident_color {
-  const char *td_ident;
-  const char *color;
-};
-
-struct kmp_ident_task {
-  const char *td_ident;
-};
+enum kmp_tdg_status { KMP_TDG_NONE, KMP_TDG_RECORDING, KMP_TDG_READY };
 
 //Structure that contains a TDG
-struct kmp_tdg_info {
-  const char *loc; //Location of the pragma
-  const char *fileName; // file name of the encountered tdg directive
-  kmp_int32 lineNumber; // line number of the encountered tdg directive
-  kmp_taskgraph_flags_t tdg_flags; // flags related to a tdg
-  kmp_int32 tdgId; //Unique idenfifier of the TDG
-  kmp_int32 mapSize; //Number of allocated TDG nodes
-  kmp_int32 numRoots; //Number of roots tasks int the TDG
-  kmp_int32 *rootTasks; //Array of tasks identifiers that are roots
-  kmp_node_info *RecordMap; //Array of TDG nodes
-  kmp_ident_task *taskIdent; //Array of locations of each TDG node
-  kmp_ident_color *colorMap; //Array of colors for the dot output
-  kmp_int32 colorIndex; //Index of colors used
-  kmp_int32 colorMapSize; //Size of colors array
-  kmp_tdg_status tdgStatus; //Status of the TDG (recording, filling data...)
-  std::atomic<kmp_int32> numTasks; //Number of TDG nodes
-  kmp_bootstrap_lock_t graph_lock; // protect graph attributes when updated via taskloop_recur
-  std::atomic<kmp_int32> remainingTasks; //Used to know if the TDG is finished
-  double spent_time; // time spent to execute this tdg, in us
+typedef struct kmp_tdg_info {
+  kmp_int32 tdg_id; // Unique idenfifier of the TDG
+  kmp_taskgraph_flags_t tdg_flags; // Flags related to a tdg
+  kmp_int32 map_size; // Number of allocated TDG nodes
+  kmp_int32 num_roots; // Number of roots tasks int the TDG
+  kmp_int32 *root_tasks; // Array of tasks identifiers that are roots
+  kmp_node_info_t *record_map; // Array of TDG nodes
+  kmp_tdg_status tdg_status =
+      KMP_TDG_NONE; // Status of the TDG (recording, filling data...)
+  std::atomic<kmp_int32> num_tasks; // Number of TDG nodes
+  kmp_bootstrap_lock_t
+      graph_lock; // protect graph attributes when updated via taskloop_recur
   // taskloop reduction related
   void *rec_taskred_data; // data to pass to __kmpc_task_reduction_init or
                           // __kmpc_taskred_init
   kmp_int32 rec_num_taskred;
-};
+} kmp_tdg_info_t;
 
-extern kmp_tdg_info __kmp_globalTdgs[NUM_TDG_LIMIT];
-extern bool __kmp_tdg_recording;
+extern kmp_tdg_info_t __kmp_global_tdgs[NUM_TDG_LIMIT];
 extern kmp_int32 __kmp_curr_tdg_idx;
-extern kmp_int32 __kmp_successorsSize;
-extern kmp_int32 __kmp_successorsIncrement;
+extern kmp_int32 __kmp_successors_size;
 extern std::atomic<kmp_int32> __kmp_tdg_task_id;
-extern kmp_int32 __kmp_maxNesting;
+extern kmp_int32 __kmp_max_nesting;
 extern kmp_int32 __kmp_num_tdg;
-extern const char *__kmp_colorNames[19];
-
-// the macro can be modified to tdg_status == TDG_RECORDING
-#define TDG_RECORD(tdg_status) __kmp_tdg_recording
 
 #ifdef BUILD_TIED_TASK_STACK
 
@@ -2656,8 +2631,8 @@ struct kmp_taskdata { /* aligned during dynamic allocation       */
 #if OMPT_SUPPORT
   ompt_task_info_t ompt_task_info;
 #endif
-  bool is_taskgraph = 0;// whether the task is within a taskgraph
-  kmp_tdg_info *tdg;    // used to associate task with a tdg
+  bool is_taskgraph = 0; // whether the task is within a tdg
+  kmp_tdg_info_t *tdg; // used to associate task with a tdg
   kmp_target_data_t td_target_data;
 }; // struct kmp_taskdata
 
@@ -4198,9 +4173,12 @@ KMP_EXPORT void __kmpc_init_nest_lock_with_hint(ident_t *loc, kmp_int32 gtid,
                                                 void **user_lock,
                                                 uintptr_t hint);
 
-// Taskgraph's Record & Replay mechanism to accelerate task regions
-KMP_EXPORT kmp_int32 __kmpc_start_record_task(ident_t *loc, kmp_int32 gtid, kmp_int32 input_flags, const char *fileName, int lineNumber);
-KMP_EXPORT void __kmpc_end_record_task(ident_t *loc, kmp_int32 gtid, kmp_int32 input_flags, const char *fileName, int lineNumber);
+// Taskgraph's Record & Replay mechanism
+KMP_EXPORT kmp_int32 __kmpc_start_record_task(ident_t *loc, kmp_int32 gtid,
+                                              kmp_int32 input_flags,
+                                              kmp_int32 tdg_id);
+KMP_EXPORT void __kmpc_end_record_task(ident_t *loc, kmp_int32 gtid,
+                                       kmp_int32 input_flags, kmp_int32 tdg_id);
 /* Interface to fast scalable reduce methods routines */
 
 KMP_EXPORT kmp_int32 __kmpc_reduce_nowait(
