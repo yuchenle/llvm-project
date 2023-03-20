@@ -20,7 +20,6 @@
 #include "ompt-specific.h"
 #endif
 
-#include <new>
 // TODO: Improve memory allocation? keep a list of pre-allocated structures?
 // allocate in blocks? re-use list finished list entries?
 // TODO: don't use atomic ref counters for stack-allocated nodes.
@@ -224,29 +223,32 @@ static inline void __kmp_track_dependence(kmp_int32 gtid, kmp_depnode_t *source,
   if((source->dn.task && sink_task) && ((task_source->is_taskgraph && !task_sink->is_taskgraph) || (!task_source->is_taskgraph && task_sink->is_taskgraph))){
     printf("Internal OpenMP error: task dependency detected between a task inside a taskgraph and a task outside, this is not supported \n");
   }
-  if (task_sink->is_taskgraph && TDG_RECORD(task_sink->tdg->tdgStatus)) {
-    kmp_node_info *SourceInfo = &(task_sink->tdg->RecordMap[source->dn.part_id]);
+  if (task_sink->is_taskgraph && TDG_RECORD(task_sink->tdg->tdg_status)) {
+    kmp_node_info_t *source_info =
+        &task_sink->tdg->record_map[task_source->td_task_id];
     bool exists = false;
-    for (int i = 0; i < SourceInfo->nsuccessors; i++) {
-      if (SourceInfo->successors[i] == task_sink->td_task_id) {
+    for (int i = 0; i < source_info->nsuccessors; i++) {
+      if (source_info->successors[i] == task_sink->td_task_id) {
         exists = true;
         break;
       }
     }
     if (!exists) {
-      if (SourceInfo->nsuccessors >= SourceInfo->successors_size) {
-        SourceInfo->successors_size += __kmp_successorsIncrement;
-        kmp_int32 *oldSuccIds = SourceInfo->successors;
-        kmp_int32 *newSuccIds = (kmp_int32 *)__kmp_allocate(SourceInfo->successors_size * sizeof(kmp_int32));
-        SourceInfo->successors = newSuccIds;
-        __kmp_free(oldSuccIds);
+      if (source_info->nsuccessors >= source_info->successors_size) {
+        source_info->successors_size = 2 * source_info->successors_size;
+        kmp_int32 *old_succ_ids = source_info->successors;
+        kmp_int32 *new_succ_ids = (kmp_int32 *)__kmp_allocate(
+            source_info->successors_size * sizeof(kmp_int32));
+        source_info->successors = new_succ_ids;
+        __kmp_free(old_succ_ids);
       }
 
-      SourceInfo->successors[SourceInfo->nsuccessors] = task_sink->td_task_id;
-      SourceInfo->nsuccessors++;
+      source_info->successors[source_info->nsuccessors] = task_sink->td_task_id;
+      source_info->nsuccessors++;
 
-      kmp_node_info *SinkInfo = &(task_sink->tdg->RecordMap[task_sink->td_task_id]);
-      SinkInfo->npredecessors++;
+      kmp_node_info_t *sink_info =
+          &(task_sink->tdg->record_map[task_sink->td_task_id]);
+      sink_info->npredecessors++;
     }
   }
 #ifdef KMP_SUPPORT_GRAPH_OUTPUT
@@ -287,18 +289,18 @@ __kmp_depnode_link_successor(kmp_int32 gtid, kmp_info_t *thread,
   // link node as successor of list elements
   for (kmp_depnode_list_t *p = plist; p; p = p->next) {
     kmp_depnode_t *dep = p->node;
-    kmp_tdg_status tdgStatus = TDG_NONE;
+    kmp_tdg_status tdg_status = KMP_TDG_NONE;
     if (task){
       kmp_taskdata_t *td = KMP_TASK_TO_TASKDATA(task);
       if (td->is_taskgraph)
-        tdgStatus = KMP_TASK_TO_TASKDATA(task)->tdg->tdgStatus;
-      if (TDG_RECORD(tdgStatus))
-          __kmp_track_dependence(gtid, dep, node, task);
+        tdg_status = KMP_TASK_TO_TASKDATA(task)->tdg->tdg_status;
+      if (TDG_RECORD(tdg_status))
+        __kmp_track_dependence(gtid, dep, node, task);
     }
     if (dep->dn.task) {
       KMP_ACQUIRE_DEPNODE(gtid, dep);
       if (dep->dn.task) {
-        if (!(TDG_RECORD(tdgStatus)) && task)
+        if (!(TDG_RECORD(tdg_status)) && task)
           __kmp_track_dependence(gtid, dep, node, task);
         dep->dn.successors = __kmp_add_node(thread, dep->dn.successors, node);
         KA_TRACE(40, ("__kmp_process_deps: T#%d adding dependence from %p to "
@@ -321,31 +323,31 @@ static inline kmp_int32 __kmp_depnode_link_successor(kmp_int32 gtid,
   if (!sink)
     return 0;
   kmp_int32 npredecessors = 0;
-  kmp_tdg_status tdgStatus = TDG_NONE;
+  kmp_tdg_status tdg_status = KMP_TDG_NONE;
   kmp_taskdata_t *td = KMP_TASK_TO_TASKDATA(task);
   if (task){
     if(td->is_taskgraph)
-      tdgStatus = KMP_TASK_TO_TASKDATA(task)->tdg->tdgStatus;
-    if (TDG_RECORD(tdgStatus) && sink->dn.task)
+      tdg_status = KMP_TASK_TO_TASKDATA(task)->tdg->tdg_status;
+    if (TDG_RECORD(tdg_status) && sink->dn.task)
       __kmp_track_dependence(gtid, sink, source, task);
   }
   if (sink->dn.task) {
     // synchronously add source to sink' list of successors
     KMP_ACQUIRE_DEPNODE(gtid, sink);
     if (sink->dn.task) {
-      if (!(TDG_RECORD(tdgStatus)) && task)
+      if (!(TDG_RECORD(tdg_status)) && task)
         __kmp_track_dependence(gtid, sink, source, task);
       sink->dn.successors = __kmp_add_node(thread, sink->dn.successors, source);
       KA_TRACE(40, ("__kmp_process_deps: T#%d adding dependence from %p to "
                     "%p\n",
                     gtid, KMP_TASK_TO_TASKDATA(sink->dn.task),
                     KMP_TASK_TO_TASKDATA(task)));
-      if (TDG_RECORD(tdgStatus)) {
+      if (TDG_RECORD(tdg_status)) {
         kmp_taskdata_t *tdd = KMP_TASK_TO_TASKDATA(sink->dn.task);
         if (tdd->is_taskgraph) {
-          // TODO: accessing to td_flags of other tasks without lock potential cause problems
           if (tdd->td_flags.onced)
-            // decrement npredecessors only if sink->dn.task belongs to a taskgraph and
+            // decrement npredecessors if sink->dn.task belongs to a taskgraph
+            // and
             //  1) the task is reset to its initial state (by kmp_free_task) or
             //  2) the task is complete but not yet reset
             npredecessors--;
@@ -655,50 +657,44 @@ kmp_int32 __kmpc_omp_task_with_deps(ident_t *loc_ref, kmp_int32 gtid,
   kmp_info_t *thread = __kmp_threads[gtid];
   kmp_taskdata_t *current_task = thread->th.th_current_task;
 
-  // upstream taskgraph
-  if(new_taskdata->is_taskgraph && TDG_RECORD(new_taskdata->tdg->tdgStatus)) {
-    kmp_tdg_info *tdg = new_taskdata->tdg;
-    //extend recordMap if needed
-    if (new_taskdata->td_task_id >= tdg->mapSize) {
+  // record tdg with deps
+  if (new_taskdata->is_taskgraph && TDG_RECORD(new_taskdata->tdg->tdg_status)) {
+    kmp_tdg_info_t *tdg = new_taskdata->tdg;
+    // extend record_map if needed
+    if (new_taskdata->td_task_id >= tdg->map_size) {
       __kmp_acquire_bootstrap_lock(&tdg->graph_lock);
-      if (new_taskdata->td_task_id >= tdg->mapSize) {
-        kmp_uint OldSize = tdg->mapSize;
-        kmp_node_info *oldRecord = tdg->RecordMap;
-        kmp_ident_task *old_taskIdent = tdg->taskIdent;
-        kmp_node_info *newRecord = (kmp_node_info *)__kmp_allocate(tdg->mapSize * sizeof(kmp_node_info));
-        kmp_ident_task *new_taskIdent = (kmp_ident_task *)__kmp_allocate(tdg->mapSize * sizeof(kmp_ident_task));
-        //TODO: Protect section, record map may be updated while copying
-        KMP_MEMCPY(newRecord, tdg->RecordMap, OldSize * sizeof(kmp_node_info));
-        tdg->RecordMap = newRecord;
-        tdg->taskIdent = new_taskIdent;
+      if (new_taskdata->td_task_id >= tdg->map_size) {
+        kmp_uint old_size = tdg->map_size;
+        kmp_uint new_size = old_size * 2;
+        kmp_node_info_t *old_record = tdg->record_map;
+        kmp_node_info_t *new_record = (kmp_node_info_t *)__kmp_allocate(
+            new_size * sizeof(kmp_node_info_t));
+        KMP_MEMCPY(new_record, tdg->record_map,
+                   old_size * sizeof(kmp_node_info_t));
+        tdg->record_map = new_record;
 
-        __kmp_free(oldRecord);
-        __kmp_free(old_taskIdent);
+        __kmp_free(old_record);
 
-        for (kmp_int i = OldSize; i < tdg->mapSize; i++) {
-          kmp_int32 *successorsList =
-              (kmp_int32 *)__kmp_allocate(__kmp_successorsSize * sizeof(kmp_int32));
-          tdg->RecordMap[i].static_id = 0;
-          tdg->RecordMap[i].task = nullptr;
-          tdg->RecordMap[i].successors = successorsList;
-          tdg->RecordMap[i].nsuccessors = 0;
-          tdg->RecordMap[i].npredecessors = 0;
-          tdg->RecordMap[i].successors_size = __kmp_successorsSize;
-          tdg->RecordMap[i].static_thread = -1;
-          void * pCounters = (void *) &tdg->RecordMap[i].npredecessors_counter;
-          new (pCounters) std::atomic<kmp_int32>(0);
+        for (kmp_int i = old_size; i < new_size; i++) {
+          kmp_int32 *successorsList = (kmp_int32 *)__kmp_allocate(
+              __kmp_successors_size * sizeof(kmp_int32));
+          new_record[i].task = nullptr;
+          new_record[i].successors = successorsList;
+          new_record[i].nsuccessors = 0;
+          new_record[i].npredecessors = 0;
+          new_record[i].successors_size = __kmp_successors_size;
+          KMP_ATOMIC_ST_REL(&new_record[i].npredecessors_counter, 0);
         }
         // update the size at the end, so that we avoid other
-        // threads use OldRecordMap while mapSize is already updated
-        tdg->mapSize = tdg->mapSize * 2;
+        // threads use old_record while map_size is already updated
+        tdg->map_size = new_size;
       }
       __kmp_release_bootstrap_lock(&tdg->graph_lock);
     }
-    tdg->taskIdent[new_taskdata->td_task_id].td_ident = new_taskdata->td_ident->psource;
-    tdg->RecordMap[new_taskdata->td_task_id].static_id = new_taskdata->td_task_id;
-    tdg->RecordMap[new_taskdata->td_task_id].task = new_task;
-    tdg->RecordMap[new_taskdata->td_task_id].parent_task = new_taskdata->td_parent;
-    KMP_ATOMIC_INC(&tdg->numTasks);
+    tdg->record_map[new_taskdata->td_task_id].task = new_task;
+    tdg->record_map[new_taskdata->td_task_id].parent_task =
+        new_taskdata->td_parent;
+    KMP_ATOMIC_INC(&tdg->num_tasks);
   }
 #if OMPT_SUPPORT
   if (ompt_enabled.enabled) {
@@ -787,7 +783,6 @@ kmp_int32 __kmpc_omp_task_with_deps(ident_t *loc_ref, kmp_int32 gtid,
 #endif
 
     __kmp_init_node(node);
-    node->dn.part_id = new_taskdata->td_task_id;
     new_taskdata->td_depnode = node;
 
     if (__kmp_check_deps(gtid, node, new_task, &current_task->td_dephash,

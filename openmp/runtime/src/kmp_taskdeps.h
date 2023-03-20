@@ -93,15 +93,15 @@ extern void __kmpc_give_task(kmp_task_t *ptask, kmp_int32 start);
 
 static inline void __kmp_release_deps(kmp_int32 gtid, kmp_taskdata_t *task) {
 
-  if (task->is_taskgraph && !(TDG_RECORD(task->tdg->tdgStatus))) {
+  if (task->is_taskgraph && !(TDG_RECORD(task->tdg->tdg_status))) {
     // TODO: Not needed when taskifying
     // printf("[OpenMP] ---- Task %d ends, checking successors ----\n",
     // this_task->part_id);
-    kmp_node_info *TaskInfo = &(task->tdg->RecordMap[task->td_task_id]);
+    kmp_node_info_t *TaskInfo = &(task->tdg->record_map[task->td_task_id]);
 
     for (int i = 0; i < TaskInfo->nsuccessors; i++) {
       kmp_int32 successorNumber = TaskInfo->successors[i];
-      kmp_node_info *successor = &(task->tdg->RecordMap[successorNumber]);
+      kmp_node_info_t *successor = &(task->tdg->record_map[successorNumber]);
       // printf("  [OpenMP] Found one successor %d , deps : %d \n",
       // successorNumber, successor->npredecessors_counter);
 
@@ -145,7 +145,7 @@ static inline void __kmp_release_deps(kmp_int32 gtid, kmp_taskdata_t *task) {
                 gtid, task));
 
   KMP_ACQUIRE_DEPNODE(gtid, node);
-  if(!TDG_RECORD(task->tdg->tdgStatus))
+  if (!TDG_RECORD(task->tdg->tdg_status))
     node->dn.task =
         NULL; // mark this task as finished, so no new dependencies are generated
   KMP_RELEASE_DEPNODE(gtid, node);
