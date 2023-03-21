@@ -145,7 +145,8 @@ static inline void __kmp_release_deps(kmp_int32 gtid, kmp_taskdata_t *task) {
                 gtid, task));
 
   KMP_ACQUIRE_DEPNODE(gtid, node);
-  if (!TDG_RECORD(task->tdg->tdg_status))
+  if (!task->is_taskgraph ||
+      (task->is_taskgraph && !TDG_RECORD(task->tdg->tdg_status)))
     node->dn.task =
         NULL; // mark this task as finished, so no new dependencies are generated
   KMP_RELEASE_DEPNODE(gtid, node);
