@@ -5427,7 +5427,8 @@ void traverse_node(kmp_int32 *edges_to_check, kmp_int32 *num_edges,
 // its initial state, return the pointer to it, otherwise nullptr
 kmp_tdg_info_t *__kmp_find_tdg(kmp_int32 tdg_id) {
   kmp_tdg_info_t *res = nullptr;
-  if ( (__kmp_global_tdgs[tdg_id]) && (__kmp_global_tdgs[tdg_id]->tdg_status != KMP_TDG_NONE) )
+  if ((__kmp_global_tdgs[tdg_id]) &&
+      (__kmp_global_tdgs[tdg_id]->tdg_status != KMP_TDG_NONE))
     res = __kmp_global_tdgs[tdg_id];
   return res;
 }
@@ -5492,7 +5493,8 @@ void __kmp_exec_tdg(kmp_int32 gtid, kmp_tdg_info_t *tdg) {
 static inline void __kmp_start_record(kmp_int32 gtid,
                                       kmp_taskgraph_flags_t *flags,
                                       kmp_int32 tdg_id) {
-  kmp_tdg_info_t *tdg = (kmp_tdg_info_t *)__kmp_allocate(sizeof(kmp_tdg_info_t));
+  kmp_tdg_info_t *tdg =
+      (kmp_tdg_info_t *)__kmp_allocate(sizeof(kmp_tdg_info_t));
   __kmp_global_tdgs[__kmp_curr_tdg_idx] = tdg;
   // Initializing the TDG structure
   tdg->tdg_id = tdg_id;
