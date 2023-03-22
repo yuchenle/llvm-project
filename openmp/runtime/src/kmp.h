@@ -2532,7 +2532,7 @@ typedef struct kmp_tdg_info {
   kmp_int32 rec_num_taskred;
 } kmp_tdg_info_t;
 
-extern kmp_tdg_info_t __kmp_global_tdgs[NUM_TDG_LIMIT];
+extern kmp_tdg_info_t *__kmp_global_tdgs[NUM_TDG_LIMIT];
 extern kmp_int32 __kmp_curr_tdg_idx;
 extern kmp_int32 __kmp_successors_size;
 extern std::atomic<kmp_int32> __kmp_tdg_task_id;

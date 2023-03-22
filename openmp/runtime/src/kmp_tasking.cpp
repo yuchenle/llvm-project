@@ -1631,10 +1631,10 @@ kmp_task_t *__kmp_task_alloc(ident_t *loc_ref, kmp_int32 gtid,
     }
   }
 
-  if (TDG_RECORD(__kmp_global_tdgs[__kmp_curr_tdg_idx].tdg_status) &&
+  if (TDG_RECORD(__kmp_global_tdgs[__kmp_curr_tdg_idx]->tdg_status) &&
       (task_entry != (kmp_routine_entry_t)__kmp_taskloop_task)) {
     taskdata->is_taskgraph = 1;
-    taskdata->tdg = &__kmp_global_tdgs[__kmp_curr_tdg_idx];
+    taskdata->tdg = __kmp_global_tdgs[__kmp_curr_tdg_idx];
     taskdata->td_task_id = KMP_ATOMIC_INC(&__kmp_tdg_task_id);
   }
   KA_TRACE(20, ("__kmp_task_alloc(exit): T#%d created task %p parent=%p\n",
@@ -2540,8 +2540,8 @@ without help of the runtime library.
 */
 void *__kmpc_task_reduction_init(int gtid, int num, void *data) {
   // would like to use TDG_RECORD(tdg_status) but cannot access to tdg
-  if (TDG_RECORD(__kmp_global_tdgs[__kmp_curr_tdg_idx].tdg_status)) {
-    kmp_tdg_info_t *this_tdg = &__kmp_global_tdgs[__kmp_curr_tdg_idx];
+  if (TDG_RECORD(__kmp_global_tdgs[__kmp_curr_tdg_idx]->tdg_status)) {
+    kmp_tdg_info_t *this_tdg = __kmp_global_tdgs[__kmp_curr_tdg_idx];
     this_tdg->rec_taskred_data =
         __kmp_allocate(sizeof(kmp_task_red_input_t) * num);
     this_tdg->rec_num_taskred = num;
@@ -2565,8 +2565,8 @@ has two parameters, pointer to object to be initialized and pointer to omp_orig
 */
 void *__kmpc_taskred_init(int gtid, int num, void *data) {
   // would like to use TDG_RECORD(tdg_status) but cannot access to tdg
-  if (TDG_RECORD(__kmp_global_tdgs[__kmp_curr_tdg_idx].tdg_status)) {
-    kmp_tdg_info_t *this_tdg = &__kmp_global_tdgs[__kmp_curr_tdg_idx];
+  if (TDG_RECORD(__kmp_global_tdgs[__kmp_curr_tdg_idx]->tdg_status)) {
+    kmp_tdg_info_t *this_tdg = __kmp_global_tdgs[__kmp_curr_tdg_idx];
     this_tdg->rec_taskred_data =
         __kmp_allocate(sizeof(kmp_task_red_input_t) * num);
     this_tdg->rec_num_taskred = num;
@@ -2620,7 +2620,7 @@ void *__kmpc_task_reduction_get_th_data(int gtid, void *tskgrp, void *data) {
   kmp_int32 tid = thread->th.th_info.ds.ds_tid;
 
   if ((thread->th.th_current_task->is_taskgraph) &&
-      (!TDG_RECORD(__kmp_global_tdgs[__kmp_curr_tdg_idx].tdg_status))) {
+      (!TDG_RECORD(__kmp_global_tdgs[__kmp_curr_tdg_idx]->tdg_status))) {
     tg = thread->th.th_current_task->td_taskgroup;
     KMP_ASSERT(tg != NULL);
     KMP_ASSERT(tg->reduce_data != NULL);
@@ -5420,49 +5420,6 @@ void traverse_node(kmp_int32 *edges_to_check, kmp_int32 *num_edges,
   }
 }
 
-// erase_transitive_edges: traverse the TDG and eliminates transitive
-// edges
-// 1-->2-->3
-//  `-----´
-// The edge 1->3 is unnecessary, since when 3 is being considered to
-// execute, 2 is launched, meaning that 1 is already finished.
-// This sort of edges are eliminated by this function
-//
-// this_tdg: Pointer to the TDG to clean
-void erase_transitive_edges(kmp_tdg_info_t *this_tdg) {
-  kmp_int32 this_num_tasks = KMP_ATOMIC_LD_RLX(&this_tdg->num_tasks);
-  for (kmp_int32 i = 0; i < this_num_tasks; i++) {
-
-    kmp_int32 nsuccessors = this_tdg->record_map[i].nsuccessors;
-
-    if (!nsuccessors)
-      continue;
-
-    int visited[this_num_tasks];
-    memset(visited, false, sizeof(int) * this_num_tasks);
-    visited[i] = true;
-    // Copy succesors, as they may be modified
-    kmp_int32 *successors =
-        (kmp_int32 *)__kmp_allocate(sizeof(kmp_int32) * nsuccessors);
-    memcpy(successors, this_tdg->record_map[i].successors,
-           sizeof(kmp_int32) * nsuccessors);
-
-    for (int j = 0; j < nsuccessors; j++) {
-      bool deleted = true;
-      for (int x = 0; x < nsuccessors; x++) {
-        if (this_tdg->record_map[i].successors[x] == successors[j])
-          deleted = false;
-      }
-      if (!deleted)
-        traverse_node(this_tdg->record_map[i].successors,
-                      &this_tdg->record_map[i].nsuccessors, successors[j], 0,
-                      visited, this_tdg);
-    }
-    // free succesors
-    __kmp_free(successors);
-  }
-}
-
 // __kmp_find_tdg: identify a TDG through its ID
 // gtid:   Global Thread ID
 // tdg_id: ID of the TDG
@@ -5470,8 +5427,8 @@ void erase_transitive_edges(kmp_tdg_info_t *this_tdg) {
 // its initial state, return the pointer to it, otherwise nullptr
 kmp_tdg_info_t *__kmp_find_tdg(kmp_int32 tdg_id) {
   kmp_tdg_info_t *res = nullptr;
-  if (__kmp_global_tdgs[tdg_id].tdg_status != KMP_TDG_NONE)
-    res = &__kmp_global_tdgs[tdg_id];
+  if ( (__kmp_global_tdgs[tdg_id]) && (__kmp_global_tdgs[tdg_id]->tdg_status != KMP_TDG_NONE) )
+    res = __kmp_global_tdgs[tdg_id];
   return res;
 }
 
@@ -5535,7 +5492,8 @@ void __kmp_exec_tdg(kmp_int32 gtid, kmp_tdg_info_t *tdg) {
 static inline void __kmp_start_record(kmp_int32 gtid,
                                       kmp_taskgraph_flags_t *flags,
                                       kmp_int32 tdg_id) {
-  kmp_tdg_info_t *tdg = &__kmp_global_tdgs[__kmp_curr_tdg_idx];
+  kmp_tdg_info_t *tdg = (kmp_tdg_info_t *)__kmp_allocate(sizeof(kmp_tdg_info_t));
+  __kmp_global_tdgs[__kmp_curr_tdg_idx] = tdg;
   // Initializing the TDG structure
   tdg->tdg_id = tdg_id;
   tdg->map_size = INIT_MAPSIZE;
@@ -5560,7 +5518,7 @@ static inline void __kmp_start_record(kmp_int32 gtid,
     KMP_ATOMIC_ST_RLX(&this_record_map[i].npredecessors_counter, 0);
   }
 
-  __kmp_global_tdgs[__kmp_curr_tdg_idx].record_map = this_record_map;
+  __kmp_global_tdgs[__kmp_curr_tdg_idx]->record_map = this_record_map;
 }
 
 // __kmpc_start_record_task: Wrapper around __kmp_start_record to mark
@@ -5620,8 +5578,6 @@ void __kmp_end_record(kmp_int32 gtid, kmp_tdg_info_t *tdg) {
   tdg->root_tasks = this_root_tasks;
   KMP_DEBUG_ASSERT(tdg->tdg_status == KMP_TDG_RECORDING);
   tdg->tdg_status = KMP_TDG_READY;
-
-  erase_transitive_edges(tdg);
 
   if (thread->th.th_current_task->td_dephash) {
     __kmp_dephash_free(thread, thread->th.th_current_task->td_dephash);
