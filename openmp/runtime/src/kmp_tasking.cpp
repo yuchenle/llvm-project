@@ -5489,7 +5489,7 @@ void __kmp_exec_tdg(kmp_int32 gtid, kmp_tdg_info_t *tdg) {
 // recording flag to true
 // gtid:        Global Thread ID of the encountering thread
 // input_flags: Flags associated with the TDG
-// tdg_id:      ID of the tdg to record
+// tdg_id:      ID of the TDG to record
 static inline void __kmp_start_record(kmp_int32 gtid,
                                       kmp_taskgraph_flags_t *flags,
                                       kmp_int32 tdg_id) {
@@ -5528,7 +5528,7 @@ static inline void __kmp_start_record(kmp_int32 gtid,
 // loc_ref:     Location of TDG, not used yet
 // gtid:        Global Thread ID of the encountering thread
 // input_flags: Flags associated with the TDG
-// tdg_id:      ID of the tdg to record, for now, incremental integer
+// tdg_id:      ID of the TDG to record, for now, incremental integer
 // returns:     1 if we record, otherwise, 0
 kmp_int32 __kmpc_start_record_task(ident_t *loc_ref, kmp_int32 gtid,
                                    kmp_int32 input_flags, kmp_int32 tdg_id) {

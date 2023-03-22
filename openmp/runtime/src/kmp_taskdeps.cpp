@@ -220,8 +220,10 @@ static inline void __kmp_track_dependence(kmp_int32 gtid, kmp_depnode_t *source,
                                           kmp_task_t *sink_task) {
   kmp_taskdata_t *task_source = KMP_TASK_TO_TASKDATA(source->dn.task);
   kmp_taskdata_t *task_sink = KMP_TASK_TO_TASKDATA(sink_task);
-  if((source->dn.task && sink_task) && ((task_source->is_taskgraph && !task_sink->is_taskgraph) || (!task_source->is_taskgraph && task_sink->is_taskgraph))){
-    printf("Internal OpenMP error: task dependency detected between a task inside a taskgraph and a task outside, this is not supported \n");
+  if (source->dn.task && sink_task) {
+    // Not supporting dependency between two tasks that one is within the TDG
+    // and the other is not
+    KMP_ASSERT(task_source->is_taskgraph == task_sink->is_taskgraph);
   }
   if (task_sink->is_taskgraph && TDG_RECORD(task_sink->tdg->tdg_status)) {
     kmp_node_info_t *source_info =
@@ -657,7 +659,7 @@ kmp_int32 __kmpc_omp_task_with_deps(ident_t *loc_ref, kmp_int32 gtid,
   kmp_info_t *thread = __kmp_threads[gtid];
   kmp_taskdata_t *current_task = thread->th.th_current_task;
 
-  // record tdg with deps
+  // record TDG with deps
   if (new_taskdata->is_taskgraph && TDG_RECORD(new_taskdata->tdg->tdg_status)) {
     kmp_tdg_info_t *tdg = new_taskdata->tdg;
     // extend record_map if needed

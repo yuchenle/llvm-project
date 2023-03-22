@@ -2516,7 +2516,7 @@ enum kmp_tdg_status { KMP_TDG_NONE, KMP_TDG_RECORDING, KMP_TDG_READY };
 //Structure that contains a TDG
 typedef struct kmp_tdg_info {
   kmp_int32 tdg_id; // Unique idenfifier of the TDG
-  kmp_taskgraph_flags_t tdg_flags; // Flags related to a tdg
+  kmp_taskgraph_flags_t tdg_flags; // Flags related to a TDG
   kmp_int32 map_size; // Number of allocated TDG nodes
   kmp_int32 num_roots; // Number of roots tasks int the TDG
   kmp_int32 *root_tasks; // Array of tasks identifiers that are roots
@@ -2637,8 +2637,8 @@ struct kmp_taskdata { /* aligned during dynamic allocation       */
 #if OMPT_SUPPORT
   ompt_task_info_t ompt_task_info;
 #endif
-  bool is_taskgraph = 0; // whether the task is within a tdg
-  kmp_tdg_info_t *tdg; // used to associate task with a tdg
+  bool is_taskgraph = 0; // whether the task is within a TDG
+  kmp_tdg_info_t *tdg; // used to associate task with a TDG
   kmp_target_data_t td_target_data;
 }; // struct kmp_taskdata
 
