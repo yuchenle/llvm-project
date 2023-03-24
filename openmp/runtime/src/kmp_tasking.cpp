@@ -16,7 +16,6 @@
 #include "kmp_stats.h"
 #include "kmp_wait_release.h"
 #include "kmp_taskdeps.h"
-#include <new>
 #if OMPT_SUPPORT
 #include "ompt-specific.h"
 #endif
@@ -1021,7 +1020,7 @@ static void __kmp_task_finish(kmp_int32 gtid, kmp_task_t *task,
   kmp_task_team_t *task_team =
       thread->th.th_task_team; // might be NULL for serial teams...
   // to avoid seg fault when we need to access taskdata->td_flags after free when using vanilla taskloop
-  kmp_int32 is_taskgraph;
+  bool is_taskgraph;
 #if KMP_DEBUG
   kmp_int32 children = 0;
 #endif
@@ -1031,10 +1030,7 @@ static void __kmp_task_finish(kmp_int32 gtid, kmp_task_t *task,
 
   KMP_DEBUG_ASSERT(taskdata->td_flags.tasktype == TASK_EXPLICIT);
 
-  if (!taskdata->is_taskgraph)
-    is_taskgraph = 0;
-  else
-    is_taskgraph = 1;
+  is_taskgraph = taskdata->is_taskgraph;
 
 // Pop task from stack if tied
 #ifdef BUILD_TIED_TASK_STACK

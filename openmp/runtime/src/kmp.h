@@ -2540,7 +2540,6 @@ extern kmp_tdg_info_t *__kmp_global_tdgs[NUM_TDG_LIMIT];
 extern kmp_int32 __kmp_curr_tdg_idx;
 extern kmp_int32 __kmp_successors_size;
 extern std::atomic<kmp_int32> __kmp_tdg_task_id;
-extern kmp_int32 __kmp_max_nesting;
 extern kmp_int32 __kmp_num_tdg;
 
 #ifdef BUILD_TIED_TASK_STACK
