@@ -1,7 +1,6 @@
-// RUN: %libomp-compile-and-run
+// RUN: %libomp-cxx-compile-and-run
 #include <iostream>
-#include <assert.h>
-#include <unistd.h>
+#include <cassert>
 #define NT 100
 
 // Compiler-generated code (emulation)
@@ -45,3 +44,4 @@ int main() {
   std::cout << "Passed" << std::endl;
   return 0;
 }
+// CHECK: Passed

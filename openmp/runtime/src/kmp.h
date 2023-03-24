@@ -2491,8 +2491,6 @@ typedef struct {
 #define NUM_TDG_LIMIT 100
 // Initial number of allocated nodes while recording
 #define INIT_MAPSIZE 50
-// Parentheses around "==" condition for evaluation order purposes
-#define TDG_RECORD(tdg_status) (tdg_status == KMP_TDG_RECORDING)
 
 typedef struct kmp_taskgraph_flags { /*This needs to be exactly 32 bits */
   unsigned nowait : 1;
@@ -2500,20 +2498,26 @@ typedef struct kmp_taskgraph_flags { /*This needs to be exactly 32 bits */
   unsigned reserved : 30;
 } kmp_taskgraph_flags_t;
 
-//Represents a TDG node
+/// Represents a TDG node
 typedef struct kmp_node_info {
-  kmp_task_t *task; //Pointer to the actual task
-  kmp_int32 *successors; //Array of the succesors ids
-  kmp_int32 nsuccessors; //Number of succesors of the node
-  std::atomic<kmp_int32> npredecessors_counter; //Number of predessors on the fly
-  kmp_int32 npredecessors; //Total number of predecessors
+  kmp_task_t *task; // Pointer to the actual task
+  kmp_int32 *successors; // Array of the succesors ids
+  kmp_int32 nsuccessors; // Number of succesors of the node
+  std::atomic<kmp_int32>
+      npredecessors_counter; // Number of predessors on the fly
+  kmp_int32 npredecessors; // Total number of predecessors
   kmp_int32 successors_size; // Number of allocated succesors ids
-  kmp_taskdata_t *parent_task; //Parent implicit task
+  kmp_taskdata_t *parent_task; // Parent implicit task
 } kmp_node_info_t;
 
-enum kmp_tdg_status { KMP_TDG_NONE, KMP_TDG_RECORDING, KMP_TDG_READY };
+/// Represent a TDG's current status
+typedef enum kmp_tdg_status {
+  KMP_TDG_NONE = 0,
+  KMP_TDG_RECORDING = 1,
+  KMP_TDG_READY = 2
+} kmp_tdg_status_t;
 
-//Structure that contains a TDG
+/// Structure that contains a TDG
 typedef struct kmp_tdg_info {
   kmp_int32 tdg_id; // Unique idenfifier of the TDG
   kmp_taskgraph_flags_t tdg_flags; // Flags related to a TDG
@@ -2521,13 +2525,13 @@ typedef struct kmp_tdg_info {
   kmp_int32 num_roots; // Number of roots tasks int the TDG
   kmp_int32 *root_tasks; // Array of tasks identifiers that are roots
   kmp_node_info_t *record_map; // Array of TDG nodes
-  kmp_tdg_status tdg_status =
-      KMP_TDG_NONE; // Status of the TDG (recording, filling data...)
+  kmp_tdg_status_t tdg_status =
+      KMP_TDG_NONE; // Status of the TDG (recording, ready...)
   std::atomic<kmp_int32> num_tasks; // Number of TDG nodes
   kmp_bootstrap_lock_t
-      graph_lock; // protect graph attributes when updated via taskloop_recur
-  // taskloop reduction related
-  void *rec_taskred_data; // data to pass to __kmpc_task_reduction_init or
+      graph_lock; // Protect graph attributes when updated via taskloop_recur
+  // Taskloop reduction related
+  void *rec_taskred_data; // Data to pass to __kmpc_task_reduction_init or
                           // __kmpc_taskred_init
   kmp_int32 rec_num_taskred;
 } kmp_tdg_info_t;
@@ -4180,6 +4184,12 @@ KMP_EXPORT void __kmpc_init_nest_lock_with_hint(ident_t *loc, kmp_int32 gtid,
                                                 uintptr_t hint);
 
 // Taskgraph's Record & Replay mechanism
+// __kmp_tdg_is_recording: check whether a given TDG is recording
+// status: the tdg's current status
+static inline bool __kmp_tdg_is_recording(kmp_tdg_status_t status) {
+  return status == KMP_TDG_RECORDING;
+}
+
 KMP_EXPORT kmp_int32 __kmpc_start_record_task(ident_t *loc, kmp_int32 gtid,
                                               kmp_int32 input_flags,
                                               kmp_int32 tdg_id);

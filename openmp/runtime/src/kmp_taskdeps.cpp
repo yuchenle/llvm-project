@@ -225,7 +225,8 @@ static inline void __kmp_track_dependence(kmp_int32 gtid, kmp_depnode_t *source,
     // and the other is not
     KMP_ASSERT(task_source->is_taskgraph == task_sink->is_taskgraph);
   }
-  if (task_sink->is_taskgraph && TDG_RECORD(task_sink->tdg->tdg_status)) {
+  if (task_sink->is_taskgraph &&
+      __kmp_tdg_is_recording(task_sink->tdg->tdg_status)) {
     kmp_node_info_t *source_info =
         &task_sink->tdg->record_map[task_source->td_task_id];
     bool exists = false;
@@ -292,17 +293,17 @@ __kmp_depnode_link_successor(kmp_int32 gtid, kmp_info_t *thread,
   for (kmp_depnode_list_t *p = plist; p; p = p->next) {
     kmp_depnode_t *dep = p->node;
     kmp_tdg_status tdg_status = KMP_TDG_NONE;
-    if (task){
+    if (task) {
       kmp_taskdata_t *td = KMP_TASK_TO_TASKDATA(task);
       if (td->is_taskgraph)
         tdg_status = KMP_TASK_TO_TASKDATA(task)->tdg->tdg_status;
-      if (TDG_RECORD(tdg_status))
+      if (__kmp_tdg_is_recording(tdg_status))
         __kmp_track_dependence(gtid, dep, node, task);
     }
     if (dep->dn.task) {
       KMP_ACQUIRE_DEPNODE(gtid, dep);
       if (dep->dn.task) {
-        if (!(TDG_RECORD(tdg_status)) && task)
+        if (!(__kmp_tdg_is_recording(tdg_status)) && task)
           __kmp_track_dependence(gtid, dep, node, task);
         dep->dn.successors = __kmp_add_node(thread, dep->dn.successors, node);
         KA_TRACE(40, ("__kmp_process_deps: T#%d adding dependence from %p to "
@@ -327,24 +328,24 @@ static inline kmp_int32 __kmp_depnode_link_successor(kmp_int32 gtid,
   kmp_int32 npredecessors = 0;
   kmp_tdg_status tdg_status = KMP_TDG_NONE;
   kmp_taskdata_t *td = KMP_TASK_TO_TASKDATA(task);
-  if (task){
-    if(td->is_taskgraph)
+  if (task) {
+    if (td->is_taskgraph)
       tdg_status = KMP_TASK_TO_TASKDATA(task)->tdg->tdg_status;
-    if (TDG_RECORD(tdg_status) && sink->dn.task)
+    if (__kmp_tdg_is_recording(tdg_status) && sink->dn.task)
       __kmp_track_dependence(gtid, sink, source, task);
   }
   if (sink->dn.task) {
     // synchronously add source to sink' list of successors
     KMP_ACQUIRE_DEPNODE(gtid, sink);
     if (sink->dn.task) {
-      if (!(TDG_RECORD(tdg_status)) && task)
+      if (!(__kmp_tdg_is_recording(tdg_status)) && task)
         __kmp_track_dependence(gtid, sink, source, task);
       sink->dn.successors = __kmp_add_node(thread, sink->dn.successors, source);
       KA_TRACE(40, ("__kmp_process_deps: T#%d adding dependence from %p to "
                     "%p\n",
                     gtid, KMP_TASK_TO_TASKDATA(sink->dn.task),
                     KMP_TASK_TO_TASKDATA(task)));
-      if (TDG_RECORD(tdg_status)) {
+      if (__kmp_tdg_is_recording(tdg_status)) {
         kmp_taskdata_t *tdd = KMP_TASK_TO_TASKDATA(sink->dn.task);
         if (tdd->is_taskgraph) {
           if (tdd->td_flags.onced)
@@ -660,7 +661,8 @@ kmp_int32 __kmpc_omp_task_with_deps(ident_t *loc_ref, kmp_int32 gtid,
   kmp_taskdata_t *current_task = thread->th.th_current_task;
 
   // record TDG with deps
-  if (new_taskdata->is_taskgraph && TDG_RECORD(new_taskdata->tdg->tdg_status)) {
+  if (new_taskdata->is_taskgraph &&
+      __kmp_tdg_is_recording(new_taskdata->tdg->tdg_status)) {
     kmp_tdg_info_t *tdg = new_taskdata->tdg;
     // extend record_map if needed
     if (new_taskdata->td_task_id >= tdg->map_size) {

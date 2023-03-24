@@ -1,8 +1,6 @@
-// RUN: %libomp-compile-and-run
+// RUN: %libomp-cxx-compile-and-run
 #include <iostream>
-#include <assert.h>
-#include <unistd.h>
-#include <omp.h>
+#include <cassert>
 
 #define NT 20
 #define N 128*128
@@ -48,3 +46,4 @@ int main() {
   std::cout << "Passed" << std::endl;
   return 0;
 }
+// CHECK: Passed
