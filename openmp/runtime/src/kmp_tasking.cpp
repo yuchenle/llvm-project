@@ -1194,18 +1194,15 @@ static void __kmp_task_finish(kmp_int32 gtid, kmp_task_t *task,
   // KMP_DEBUG_ASSERT( resumed_task->td_flags.executing == 0 );
   resumed_task->td_flags.executing = 1; // resume previous task
 
-  if (is_taskgraph) {
-    if (__kmp_track_children_task(taskdata)) {
-      if (taskdata->td_taskgroup) {
-        // TDG: we only release taskgroup barrier here because
-        // free_task_and_ancestors will call
-        // __kmp_free_task, which resets all task parameters such as
-        // taskdata->started, etc. If we release the barrier earlier, these
-        // parameters could be read before being reset. This is not an issue for
-        // non-TDG implementation because we never reuse a task(data) structure
-        KMP_ATOMIC_DEC(&taskdata->td_taskgroup->count);
-      }
-    }
+  if (is_taskgraph && __kmp_track_children_task(taskdata) &&
+      taskdata->td_taskgroup) {
+    // TDG: we only release taskgroup barrier here because
+    // free_task_and_ancestors will call
+    // __kmp_free_task, which resets all task parameters such as
+    // taskdata->started, etc. If we release the barrier earlier, these
+    // parameters could be read before being reset. This is not an issue for
+    // non-TDG implementation because we never reuse a task(data) structure
+    KMP_ATOMIC_DEC(&taskdata->td_taskgroup->count);
   }
 
   KA_TRACE(
