@@ -2270,7 +2270,7 @@ static kmp_int32 __kmpc_omp_taskwait_template(ident_t *loc_ref, kmp_int32 gtid,
     }
 #endif // OMPT_SUPPORT && OMPT_OPTIONAL
   }
-
+ 
   KA_TRACE(10, ("__kmpc_omp_taskwait(exit): T#%d task %p finished waiting, "
                 "returning TASK_CURRENT_NOT_QUEUED\n",
                 gtid, taskdata));
@@ -3149,6 +3149,7 @@ static kmp_task_t *__kmp_remove_my_task(kmp_info_t *thread, kmp_int32 gtid,
 
   thread_data->td.td_deque_tail = tail;
   TCW_4(thread_data->td.td_deque_ntasks, thread_data->td.td_deque_ntasks - 1);
+
   __kmp_release_bootstrap_lock(&thread_data->td.td_deque_lock);
 
   KA_TRACE(10, ("__kmp_remove_my_task(exit #4): T#%d task %p removed: "
