@@ -2487,8 +2487,6 @@ typedef struct {
   } ed;
 } kmp_event_t;
 
-// Maximum number of TDGs
-#define NUM_TDG_LIMIT 100
 // Initial number of allocated nodes while recording
 #define INIT_MAPSIZE 50
 
@@ -2536,7 +2534,8 @@ typedef struct kmp_tdg_info {
   kmp_int32 rec_num_taskred;
 } kmp_tdg_info_t;
 
-extern kmp_tdg_info_t *__kmp_global_tdgs[NUM_TDG_LIMIT];
+extern kmp_int32 __kmp_max_tdgs;
+extern kmp_tdg_info_t **__kmp_global_tdgs;
 extern kmp_int32 __kmp_curr_tdg_idx;
 extern kmp_int32 __kmp_successors_size;
 extern std::atomic<kmp_int32> __kmp_tdg_task_id;

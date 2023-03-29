@@ -558,7 +558,8 @@ int __kmp_nesting_mode_nlevels = 1;
 int *__kmp_nesting_nth_level;
 
 // TDG record & replay
-kmp_tdg_info_t *__kmp_global_tdgs[NUM_TDG_LIMIT];
+kmp_int32 __kmp_max_tdgs = 100;
+kmp_tdg_info_t **__kmp_global_tdgs = NULL;
 kmp_int32
     __kmp_curr_tdg_idx; // Id of the current TDG being recorded or executed
 kmp_int32 __kmp_num_tdg = 0;

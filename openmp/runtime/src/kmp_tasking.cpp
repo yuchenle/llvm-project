@@ -1624,7 +1624,8 @@ kmp_task_t *__kmp_task_alloc(ident_t *loc_ref, kmp_int32 gtid,
     }
   }
 
-  if (__kmp_tdg_is_recording(
+  if (__kmp_max_tdgs &&
+      __kmp_tdg_is_recording(
           __kmp_global_tdgs[__kmp_curr_tdg_idx]->tdg_status) &&
       (task_entry != (kmp_routine_entry_t)__kmp_taskloop_task)) {
     taskdata->is_taskgraph = 1;
@@ -2534,7 +2535,8 @@ the reduction either does not use omp_orig object, or the omp_orig is accessible
 without help of the runtime library.
 */
 void *__kmpc_task_reduction_init(int gtid, int num, void *data) {
-  if (__kmp_tdg_is_recording(
+  if (__kmp_max_tdgs &&
+      __kmp_tdg_is_recording(
           __kmp_global_tdgs[__kmp_curr_tdg_idx]->tdg_status)) {
     kmp_tdg_info_t *this_tdg = __kmp_global_tdgs[__kmp_curr_tdg_idx];
     this_tdg->rec_taskred_data =
@@ -2559,7 +2561,8 @@ Note: this entry supposes the optional compiler-generated initializer routine
 has two parameters, pointer to object to be initialized and pointer to omp_orig
 */
 void *__kmpc_taskred_init(int gtid, int num, void *data) {
-  if (__kmp_tdg_is_recording(
+  if (__kmp_max_tdgs &&
+      __kmp_tdg_is_recording(
           __kmp_global_tdgs[__kmp_curr_tdg_idx]->tdg_status)) {
     kmp_tdg_info_t *this_tdg = __kmp_global_tdgs[__kmp_curr_tdg_idx];
     this_tdg->rec_taskred_data =
@@ -5389,6 +5392,13 @@ bool __kmpc_omp_has_task_team(kmp_int32 gtid) {
 // its initial state, return the pointer to it, otherwise nullptr
 kmp_tdg_info_t *__kmp_find_tdg(kmp_int32 tdg_id) {
   kmp_tdg_info_t *res = nullptr;
+  if (__kmp_max_tdgs == 0)
+    return res;
+
+  if (__kmp_global_tdgs == NULL)
+    __kmp_global_tdgs = (kmp_tdg_info_t **)__kmp_allocate(
+        sizeof(kmp_tdg_info_t *) * __kmp_max_tdgs);
+
   if ((__kmp_global_tdgs[tdg_id]) &&
       (__kmp_global_tdgs[tdg_id]->tdg_status != KMP_TDG_NONE))
     res = __kmp_global_tdgs[tdg_id];
@@ -5500,14 +5510,24 @@ kmp_int32 __kmpc_start_record_task(ident_t *loc_ref, kmp_int32 gtid,
   KA_TRACE(10,
            ("__kmpc_start_record_task(enter): T#%d loc=%p flags=%d tdg_id=%d\n",
             gtid, loc_ref, input_flags, tdg_id));
+
+  if (__kmp_max_tdgs == 0) {
+    KA_TRACE(
+        10,
+        ("__kmpc_start_record_task(abandon): T#%d loc=%p flags=%d tdg_id = %d, "
+         "__kmp_max_tdgs = 0\n",
+         gtid, loc_ref, input_flags, tdg_id));
+    return 1;
+  }
+
   __kmpc_taskgroup(loc_ref, gtid);
   if (kmp_tdg_info_t *tdg = __kmp_find_tdg(tdg_id)) {
     // TODO: use re_record flag
     __kmp_exec_tdg(gtid, tdg);
     res = 0;
   } else {
-    __kmp_curr_tdg_idx = __kmp_num_tdg;
-    KMP_DEBUG_ASSERT(__kmp_curr_tdg_idx < NUM_TDG_LIMIT);
+    __kmp_curr_tdg_idx = tdg_id;
+    KMP_DEBUG_ASSERT(__kmp_curr_tdg_idx < __kmp_max_tdgs);
     __kmp_start_record(gtid, flags, tdg_id);
     __kmp_num_tdg++;
     res = 1;
@@ -5570,10 +5590,11 @@ void __kmpc_end_record_task(ident_t *loc_ref, kmp_int32 gtid,
   KA_TRACE(10, ("__kmpc_end_record_task(enter): T#%d loc=%p finishes recording"
                 " tdg=%d with flags=%d\n",
                 gtid, loc_ref, tdg_id, input_flags));
-  // TODO: use input_flags->nowait
-  __kmpc_end_taskgroup(loc_ref, gtid);
-  if (__kmp_tdg_is_recording(tdg->tdg_status)) {
-    __kmp_end_record(gtid, tdg);
+  if (__kmp_max_tdgs) {
+    // TODO: use input_flags->nowait
+    __kmpc_end_taskgroup(loc_ref, gtid);
+    if (__kmp_tdg_is_recording(tdg->tdg_status))
+      __kmp_end_record(gtid, tdg);
   }
   KA_TRACE(10, ("__kmpc_end_record_task(exit): T#%d loc=%p finished recording"
                 " tdg=%d, its status is now READY\n",
