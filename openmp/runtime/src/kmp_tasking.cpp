@@ -37,7 +37,10 @@ static void __kmp_alloc_task_deque(kmp_info_t *thread,
 static int __kmp_realloc_task_threads_data(kmp_info_t *thread,
                                            kmp_task_team_t *task_team);
 static void __kmp_bottom_half_finish_proxy(kmp_int32 gtid, kmp_task_t *ptask);
+#if OMPX_TASKGRAPH
+static kmp_tdg_info_t *__kmp_find_tdg(kmp_int32 tdg_id);
 int __kmp_taskloop_task(int gtid, void *ptask);
+#endif
 
 #ifdef BUILD_TIED_TASK_STACK
 
@@ -282,7 +285,11 @@ static bool __kmp_task_is_allowed(int gtid, const kmp_int32 is_constrained,
   }
   // Check mutexinoutset dependencies, acquire locks
   kmp_depnode_t *node = tasknew->td_depnode;
+#if OMPX_TASKGRAPH
   if (!tasknew->is_taskgraph && UNLIKELY(node && (node->dn.mtx_num_locks > 0))) {
+#else
+  if (UNLIKELY(node && (node->dn.mtx_num_locks > 0))) {
+#endif
     for (int i = 0; i < node->dn.mtx_num_locks; ++i) {
       KMP_DEBUG_ASSERT(node->dn.mtx_locks[i] != NULL);
       if (__kmp_test_lock(node->dn.mtx_locks[i], gtid))
@@ -889,14 +896,17 @@ static void __kmp_free_task(kmp_int32 gtid, kmp_taskdata_t *taskdata,
   task->data2.priority = 0;
 
   taskdata->td_flags.freed = 1;
+#if OMPX_TASKGRAPH
   // do not free tasks in taskgraph
   if (!taskdata->is_taskgraph) {
+#endif
 // deallocate the taskdata and shared variable blocks associated with this task
 #if USE_FAST_MEMORY
   __kmp_fast_free(thread, taskdata);
 #else /* ! USE_FAST_MEMORY */
   __kmp_thread_free(thread, taskdata);
 #endif
+#if OMPX_TASKGRAPH
   } else {
     taskdata->td_flags.complete = 0;
     taskdata->td_flags.started = 0;
@@ -912,6 +922,7 @@ static void __kmp_free_task(kmp_int32 gtid, kmp_taskdata_t *taskdata,
     // start at one because counts current task and children
     KMP_ATOMIC_ST_RLX(&taskdata->td_allocated_child_tasks, 1);
   }
+#endif
 
   KA_TRACE(20, ("__kmp_free_task: T#%d freed task %p\n", gtid, taskdata));
 }
@@ -999,8 +1010,10 @@ static bool __kmp_track_children_task(kmp_taskdata_t *taskdata) {
         flags.detachable == TASK_DETACHABLE || flags.hidden_helper;
   ret = ret ||
         KMP_ATOMIC_LD_ACQ(&taskdata->td_parent->td_incomplete_child_tasks) > 0;
+#if OMPX_TASKGRAPH
   if (taskdata->td_taskgroup && taskdata->is_taskgraph)
     ret = ret || KMP_ATOMIC_LD_ACQ(&taskdata->td_taskgroup->count) > 0;
+#endif
   return ret;
 }
 
@@ -1020,8 +1033,10 @@ static void __kmp_task_finish(kmp_int32 gtid, kmp_task_t *task,
   kmp_info_t *thread = __kmp_threads[gtid];
   kmp_task_team_t *task_team =
       thread->th.th_task_team; // might be NULL for serial teams...
+#if OMPX_TASKGRAPH
   // to avoid seg fault when we need to access taskdata->td_flags after free when using vanilla taskloop
   bool is_taskgraph;
+#endif
 #if KMP_DEBUG
   kmp_int32 children = 0;
 #endif
@@ -1031,7 +1046,9 @@ static void __kmp_task_finish(kmp_int32 gtid, kmp_task_t *task,
 
   KMP_DEBUG_ASSERT(taskdata->td_flags.tasktype == TASK_EXPLICIT);
 
+#if OMPX_TASKGRAPH
   is_taskgraph = taskdata->is_taskgraph;
+#endif
 
 // Pop task from stack if tied
 #ifdef BUILD_TIED_TASK_STACK
@@ -1139,7 +1156,9 @@ static void __kmp_task_finish(kmp_int32 gtid, kmp_task_t *task,
 
   if (completed) {
     taskdata->td_flags.complete = 1; // mark the task as completed
+#if OMPX_TASKGRAPH
     taskdata->td_flags.onced = 1; // mark the task as ran once already
+#endif
 
 #if OMPT_SUPPORT
     // This is not a detached task, we are done here
@@ -1156,7 +1175,11 @@ static void __kmp_task_finish(kmp_int32 gtid, kmp_task_t *task,
 #endif
           KMP_ATOMIC_DEC(&taskdata->td_parent->td_incomplete_child_tasks);
       KMP_DEBUG_ASSERT(children >= 0);
+#if OMPX_TASKGRAPH
       if (taskdata->td_taskgroup && !taskdata->is_taskgraph)
+#else
+      if (taskdata->td_taskgroup)
+#endif
         KMP_ATOMIC_DEC(&taskdata->td_taskgroup->count);
     } else if (task_team && (task_team->tt.tt_found_proxy_tasks ||
                              task_team->tt.tt_hidden_helper_task_encountered)) {
@@ -1195,6 +1218,7 @@ static void __kmp_task_finish(kmp_int32 gtid, kmp_task_t *task,
   // KMP_DEBUG_ASSERT( resumed_task->td_flags.executing == 0 );
   resumed_task->td_flags.executing = 1; // resume previous task
 
+#if OMPX_TASKGRAPH
   if (is_taskgraph && __kmp_track_children_task(taskdata) &&
       taskdata->td_taskgroup) {
     // TDG: we only release taskgroup barrier here because
@@ -1205,6 +1229,7 @@ static void __kmp_task_finish(kmp_int32 gtid, kmp_task_t *task,
     // non-TDG implementation because we never reuse a task(data) structure
     KMP_ATOMIC_DEC(&taskdata->td_taskgroup->count);
   }
+#endif
 
   KA_TRACE(
       10, ("__kmp_task_finish(exit): T#%d finished task %p, resuming task %p\n",
@@ -1322,7 +1347,9 @@ void __kmp_init_implicit_task(ident_t *loc_ref, kmp_info_t *this_thr,
   task->td_flags.executing = 1;
   task->td_flags.complete = 0;
   task->td_flags.freed = 0;
+#if OMPX_TASKGRAPH
   task->td_flags.onced = 0;
+#endif
 
   task->td_depnode = NULL;
   task->td_last_tied = task;
@@ -1359,7 +1386,9 @@ void __kmp_finish_implicit_task(kmp_info_t *thread) {
   if (task->td_dephash) {
     int children;
     task->td_flags.complete = 1;
+#if OMPX_TASKGRAPH
     task->td_flags.onced = 1;
+#endif
     children = KMP_ATOMIC_LD_ACQ(&task->td_incomplete_child_tasks);
     kmp_tasking_flags_t flags_old = task->td_flags;
     if (children == 0 && flags_old.complete == 1) {
@@ -1589,7 +1618,9 @@ kmp_task_t *__kmp_task_alloc(ident_t *loc_ref, kmp_int32 gtid,
   taskdata->td_flags.executing = 0;
   taskdata->td_flags.complete = 0;
   taskdata->td_flags.freed = 0;
+#if OMPX_TASKGRAPH
   taskdata->td_flags.onced = 0;
+#endif
   KMP_ATOMIC_ST_RLX(&taskdata->td_incomplete_child_tasks, 0);
   // start at one because counts current task and children
   KMP_ATOMIC_ST_RLX(&taskdata->td_allocated_child_tasks, 1);
@@ -1625,14 +1656,15 @@ kmp_task_t *__kmp_task_alloc(ident_t *loc_ref, kmp_int32 gtid,
     }
   }
 
-  if (__kmp_max_tdgs &&
-      __kmp_tdg_is_recording(
-          __kmp_global_tdgs[__kmp_curr_tdg_idx]->tdg_status) &&
+#if OMPX_TASKGRAPH
+  kmp_tdg_info_t *tdg = __kmp_find_tdg(__kmp_curr_tdg_idx);
+  if (tdg && __kmp_tdg_is_recording(tdg->tdg_status) &&
       (task_entry != (kmp_routine_entry_t)__kmp_taskloop_task)) {
     taskdata->is_taskgraph = 1;
     taskdata->tdg = __kmp_global_tdgs[__kmp_curr_tdg_idx];
     taskdata->td_task_id = KMP_ATOMIC_INC(&__kmp_tdg_task_id);
   }
+#endif
   KA_TRACE(20, ("__kmp_task_alloc(exit): T#%d created task %p parent=%p\n",
                 gtid, taskdata, taskdata->td_parent));
 
@@ -1976,6 +2008,7 @@ kmp_int32 __kmp_omp_task(kmp_int32 gtid, kmp_task_t *new_task,
                          bool serialize_immediate) {
   kmp_taskdata_t *new_taskdata = KMP_TASK_TO_TASKDATA(new_task);
 
+#if OMPX_TASKGRAPH
   if (new_taskdata->is_taskgraph &&
       __kmp_tdg_is_recording(new_taskdata->tdg->tdg_status)) {
     kmp_tdg_info_t *tdg = new_taskdata->tdg;
@@ -2020,6 +2053,7 @@ kmp_int32 __kmp_omp_task(kmp_int32 gtid, kmp_task_t *new_task,
       KMP_ATOMIC_INC(&tdg->num_tasks);
     }
   }
+#endif
 
   /* Should we execute the new task or queue it? For now, let's just always try
      to queue it.  If the queue fills up, then we'll execute it.  */
@@ -2270,7 +2304,7 @@ static kmp_int32 __kmpc_omp_taskwait_template(ident_t *loc_ref, kmp_int32 gtid,
     }
 #endif // OMPT_SUPPORT && OMPT_OPTIONAL
   }
- 
+
   KA_TRACE(10, ("__kmpc_omp_taskwait(exit): T#%d task %p finished waiting, "
                 "returning TASK_CURRENT_NOT_QUEUED\n",
                 gtid, taskdata));
@@ -2536,9 +2570,9 @@ the reduction either does not use omp_orig object, or the omp_orig is accessible
 without help of the runtime library.
 */
 void *__kmpc_task_reduction_init(int gtid, int num, void *data) {
-  if (__kmp_max_tdgs &&
-      __kmp_tdg_is_recording(
-          __kmp_global_tdgs[__kmp_curr_tdg_idx]->tdg_status)) {
+#if OMPX_TASKGRAPH
+  kmp_tdg_info_t *tdg = __kmp_find_tdg(__kmp_curr_tdg_idx);
+  if (tdg && __kmp_tdg_is_recording(tdg->tdg_status)) {
     kmp_tdg_info_t *this_tdg = __kmp_global_tdgs[__kmp_curr_tdg_idx];
     this_tdg->rec_taskred_data =
         __kmp_allocate(sizeof(kmp_task_red_input_t) * num);
@@ -2546,6 +2580,7 @@ void *__kmpc_task_reduction_init(int gtid, int num, void *data) {
     KMP_MEMCPY(this_tdg->rec_taskred_data, data,
                sizeof(kmp_task_red_input_t) * num);
   }
+#endif
   return __kmp_task_reduction_init(gtid, num, (kmp_task_red_input_t *)data);
 }
 
@@ -2562,9 +2597,9 @@ Note: this entry supposes the optional compiler-generated initializer routine
 has two parameters, pointer to object to be initialized and pointer to omp_orig
 */
 void *__kmpc_taskred_init(int gtid, int num, void *data) {
-  if (__kmp_max_tdgs &&
-      __kmp_tdg_is_recording(
-          __kmp_global_tdgs[__kmp_curr_tdg_idx]->tdg_status)) {
+#if OMPX_TASKGRAPH
+  kmp_tdg_info_t *tdg = __kmp_find_tdg(__kmp_curr_tdg_idx);
+  if (tdg && __kmp_tdg_is_recording(tdg->tdg_status)) {
     kmp_tdg_info_t *this_tdg = __kmp_global_tdgs[__kmp_curr_tdg_idx];
     this_tdg->rec_taskred_data =
         __kmp_allocate(sizeof(kmp_task_red_input_t) * num);
@@ -2572,6 +2607,7 @@ void *__kmpc_taskred_init(int gtid, int num, void *data) {
     KMP_MEMCPY(this_tdg->rec_taskred_data, data,
                sizeof(kmp_task_red_input_t) * num);
   }
+#endif
   return __kmp_task_reduction_init(gtid, num, (kmp_taskred_input_t *)data);
 }
 
@@ -2618,6 +2654,7 @@ void *__kmpc_task_reduction_get_th_data(int gtid, void *tskgrp, void *data) {
   kmp_int32 num = tg->reduce_num_data;
   kmp_int32 tid = thread->th.th_info.ds.ds_tid;
 
+#if OMPX_TASKGRAPH
   if ((thread->th.th_current_task->is_taskgraph) &&
       (!__kmp_tdg_is_recording(
           __kmp_global_tdgs[__kmp_curr_tdg_idx]->tdg_status))) {
@@ -2627,6 +2664,7 @@ void *__kmpc_task_reduction_get_th_data(int gtid, void *tskgrp, void *data) {
     arr = (kmp_taskred_data_t *)(tg->reduce_data);
     num = tg->reduce_num_data;
   }
+#endif
 
   KMP_ASSERT(data != NULL);
   while (tg != NULL) {
@@ -4399,7 +4437,9 @@ static void __kmp_first_top_half_finish_proxy(kmp_taskdata_t *taskdata) {
   KMP_DEBUG_ASSERT(taskdata->td_flags.freed == 0);
 
   taskdata->td_flags.complete = 1; // mark the task as completed
+#if OMPX_TASKGRAPH
   taskdata->td_flags.onced = 1;
+#endif
 
   if (taskdata->td_taskgroup)
     KMP_ATOMIC_DEC(&taskdata->td_taskgroup->count);
@@ -4601,8 +4641,11 @@ void __kmp_fulfill_event(kmp_event_t *event) {
 // taskloop_recur: used only when dealing with taskgraph,
 //      indicating whether we need to update task->td_task_id
 // returns:  a pointer to the allocated kmp_task_t structure (task).
-kmp_task_t *__kmp_task_dup_alloc(kmp_info_t *thread, kmp_task_t *task_src,
-                                 int taskloop_recur) {
+kmp_task_t *__kmp_task_dup_alloc(kmp_info_t *thread, kmp_task_t *task_src
+#if OMPX_TASKGRAPH
+                                 , int taskloop_recur
+#endif
+) {
   kmp_task_t *task;
   kmp_taskdata_t *taskdata;
   kmp_taskdata_t *taskdata_src = KMP_TASK_TO_TASKDATA(task_src);
@@ -4630,11 +4673,15 @@ kmp_task_t *__kmp_task_dup_alloc(kmp_info_t *thread, kmp_task_t *task_src,
   task = KMP_TASKDATA_TO_TASK(taskdata);
 
   // Initialize new task (only specific fields not affected by memcpy)
+#if OMPX_TASKGRAPH
   if (!taskdata->is_taskgraph || taskloop_recur)
     taskdata->td_task_id = KMP_GEN_TASK_ID();
   else if (taskdata->is_taskgraph &&
            __kmp_tdg_is_recording(taskdata_src->tdg->tdg_status))
     taskdata->td_task_id = KMP_ATOMIC_INC(&__kmp_tdg_task_id);
+#else
+  taskdata->td_task_id = KMP_GEN_TASK_ID();
+#endif
   if (task->shareds != NULL) { // need setup shareds pointer
     shareds_offset = (char *)task_src->shareds - (char *)taskdata_src;
     task->shareds = &((char *)taskdata)[shareds_offset];
@@ -4861,9 +4908,13 @@ void __kmp_taskloop_linear(ident_t *loc, int gtid, kmp_task_t *task,
           lastpriv = 1;
       }
     }
-    next_task =
-        __kmp_task_dup_alloc(thread, task,
-                             /* taskloop_recur */ 0); // allocate new task
+
+#if OMPX_TASKGRAPH
+    next_task = __kmp_task_dup_alloc(thread, task, /* taskloop_recur */ 0);
+#else
+    next_task = __kmp_task_dup_alloc(thread, task); // allocate new task
+#endif
+
     kmp_taskdata_t *next_taskdata = KMP_TASK_TO_TASKDATA(next_task);
     kmp_taskloop_bounds_t next_task_bounds =
         kmp_taskloop_bounds_t(next_task, task_bounds);
@@ -5060,9 +5111,12 @@ void __kmp_taskloop_recur(ident_t *loc, int gtid, kmp_task_t *task,
   lb1 = ub0 + st;
 
   // create pattern task for 2nd half of the loop
-  next_task =
-      __kmp_task_dup_alloc(thread, task,
-                           /* taskloop_recur */ 1); // duplicate the task
+#if OMPX_TASKGRAPH
+  next_task = __kmp_task_dup_alloc(thread, task,
+                                   /* taskloop_recur */ 1);
+#else
+  next_task = __kmp_task_dup_alloc(thread, task); // duplicate the task
+#endif
   // adjust lower bound (upper bound is not changed) for the 2nd half
   *(kmp_uint64 *)((char *)next_task + lower_offset) = lb1;
   if (ptask_dup != NULL) // construct firstprivates, etc.
@@ -5095,9 +5149,11 @@ void __kmp_taskloop_recur(ident_t *loc, int gtid, kmp_task_t *task,
   p->codeptr_ra = codeptr_ra;
 #endif
 
+#if OMPX_TASKGRAPH
   kmp_taskdata_t *new_task_data = KMP_TASK_TO_TASKDATA(new_task);
   new_task_data->tdg = taskdata->tdg;
   new_task_data->is_taskgraph = 0;
+#endif
 
 #if OMPT_SUPPORT
   // schedule new task with correct return address for OMPT events
@@ -5138,7 +5194,9 @@ static void __kmp_taskloop(ident_t *loc, int gtid, kmp_task_t *task, int if_val,
     __kmpc_taskgroup(loc, gtid);
   }
 
+#if OMPX_TASKGRAPH
   KMP_ATOMIC_DEC(&__kmp_tdg_task_id);
+#endif
   // =========================================================================
   // calculate loop parameters
   kmp_taskloop_bounds_t task_bounds(task, lb, ub);
@@ -5387,12 +5445,13 @@ bool __kmpc_omp_has_task_team(kmp_int32 gtid) {
   return taskdata->td_task_team != NULL;
 }
 
+#if OMPX_TASKGRAPH
 // __kmp_find_tdg: identify a TDG through its ID
 // gtid:   Global Thread ID
 // tdg_id: ID of the TDG
 // returns: If a TDG corresponding to this ID is found and not
 // its initial state, return the pointer to it, otherwise nullptr
-kmp_tdg_info_t *__kmp_find_tdg(kmp_int32 tdg_id) {
+static kmp_tdg_info_t *__kmp_find_tdg(kmp_int32 tdg_id) {
   kmp_tdg_info_t *res = nullptr;
   if (__kmp_max_tdgs == 0)
     return res;
@@ -5602,3 +5661,4 @@ void __kmpc_end_record_task(ident_t *loc_ref, kmp_int32 gtid,
                 " tdg=%d, its status is now READY\n",
                 gtid, loc_ref, tdg_id));
 }
+#endif
